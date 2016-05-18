@@ -19,6 +19,8 @@ function existsSync(path) {
   }
 }
 
+const ngBin = `node ${path.join(process.cwd(), 'bin', 'ng')}`;
+
 describe('Basic end-to-end Workflow', function () {
   before(conf.setup);
 
@@ -45,7 +47,7 @@ describe('Basic end-to-end Workflow', function () {
   it('Can create new project using `ng new test-project`', function () {
     this.timeout(4200000);
 
-    return ng(['new', 'test-project', '--silent']).then(function () {
+    return ng(['new', 'test-project', '--skip-npm']).then(function () {
       expect(existsSync(path.join(root, 'test-project')));
     });
   });
@@ -55,6 +57,7 @@ describe('Basic end-to-end Workflow', function () {
     process.chdir(path.join(root, 'test-project'));
     sh.exec('npm link angular-cli', { silent: true });
     expect(path.basename(process.cwd())).to.equal('test-project');
+    sh.exec('npm install');
   });
 
   it('Supports production builds via `ng build --environment=production`', function() {
@@ -62,7 +65,7 @@ describe('Basic end-to-end Workflow', function () {
 
     // Can't user the `ng` helper because somewhere the environment gets
     // stuck to the first build done
-    sh.exec('ng build --environment=production --silent');
+    sh.exec(`${ngBin} build --environment=production`);
     expect(existsSync(path.join(process.cwd(), 'dist'))).to.be.equal(true);
     var appBundlePath = path.join(process.cwd(), 'dist', 'app', 'index.js');
     var appBundleContent = fs.readFileSync(appBundlePath, { encoding: 'utf8' });
@@ -75,16 +78,21 @@ describe('Basic end-to-end Workflow', function () {
   it('Can run `ng build` in created project', function () {
     this.timeout(420000);
 
-    return ng(['build', '--silent'])
+    return ng(['build'])
+      .catch(() => {
+        throw new Error('Build failed.');
+      })
       .then(function () {
         expect(existsSync(path.join(process.cwd(), 'dist'))).to.be.equal(true);
+
+        // Check the index.html to have no handlebar tokens in it.
+        const indexHtml = fs.readFileSync(path.join(process.cwd(), 'dist/index.html'), 'utf-8');
+        expect(indexHtml).to.not.include('{{');
+        expect(indexHtml).to.include('vendor/es6-shim/es6-shim.js');
       })
       .then(function () {
         // Also does not create new things in GIT.
         expect(sh.exec('git status --porcelain').output).to.be.equal(undefined);
-      })
-      .catch(() => {
-        throw new Error('Build failed.');
       });
   });
 
@@ -187,7 +195,7 @@ describe('Basic end-to-end Workflow', function () {
     const tmpFileLocation = path.join(process.cwd(), 'dist', 'test.abc');
     fs.writeFileSync(tmpFile, 'hello world');
 
-    return ng(['build', '--silent'])
+    return ng(['build'])
       .then(function () {
         expect(existsSync(tmpFileLocation)).to.be.equal(true);
       })
@@ -196,7 +204,7 @@ describe('Basic end-to-end Workflow', function () {
       });
   });
 
-  it('Installs sass support successfully', function() {
+  it.skip('Installs sass support successfully', function() {
     this.timeout(420000);
 
     sh.exec('npm install node-sass', { silent: true });
@@ -213,7 +221,7 @@ describe('Basic end-to-end Workflow', function () {
       let scssExample = '.outer {\n  .inner { background: #fff; }\n }';
       fs.writeFileSync(scssFile, scssExample, 'utf8');
 
-      sh.exec('ng build --silent');
+      sh.exec(`${ngBin} build`);
       let destCss = path.join(process.cwd(), 'dist', 'app', 'test-component', 'test-component.component.css');
       expect(existsSync(destCss)).to.be.equal(true);
       let contents = fs.readFileSync(destCss, 'utf8');
@@ -221,7 +229,7 @@ describe('Basic end-to-end Workflow', function () {
 
       sh.rm('-f', destCss);
       process.chdir('src');
-      sh.exec('ng build --silent');
+      sh.exec(`${ngBin} build`);
       expect(existsSync(destCss)).to.be.equal(true);
       contents = fs.readFileSync(destCss, 'utf8');
       expect(contents).to.include('.outer .inner');
@@ -231,7 +239,7 @@ describe('Basic end-to-end Workflow', function () {
     });
   });
 
-  it('Installs less support successfully', function() {
+  it.skip('Installs less support successfully', function() {
     this.timeout(420000);
 
     sh.exec('npm install less', { silent: true });
@@ -248,7 +256,7 @@ describe('Basic end-to-end Workflow', function () {
       let lessExample = '.outer {\n  .inner { background: #fff; }\n }';
       fs.writeFileSync(lessFile, lessExample, 'utf8');
 
-      sh.exec('ng build --silent');
+      sh.exec(`${ngBin} build`);
       let destCss = path.join(process.cwd(), 'dist', 'app', 'test-component', 'test-component.component.css');
       expect(existsSync(destCss)).to.be.equal(true);
       let contents = fs.readFileSync(destCss, 'utf8');
@@ -256,7 +264,7 @@ describe('Basic end-to-end Workflow', function () {
 
       sh.rm('-f', destCss);
       process.chdir('src');
-      sh.exec('ng build --silent');
+      sh.exec(`${ngBin} build`);
       expect(existsSync(destCss)).to.be.equal(true);
       contents = fs.readFileSync(destCss, 'utf8');
       expect(contents).to.include('.outer .inner');
@@ -266,7 +274,7 @@ describe('Basic end-to-end Workflow', function () {
     });
   });
 
-  it('Installs stylus support successfully', function() {
+  it.skip('Installs stylus support successfully', function() {
     this.timeout(420000);
 
     sh.exec('npm install stylus', { silent: true });
@@ -282,7 +290,7 @@ describe('Basic end-to-end Workflow', function () {
       let stylusExample = '.outer {\n  .inner { background: #fff; }\n }';
       fs.writeFileSync(stylusFile, stylusExample, 'utf8');
 
-      sh.exec('ng build --silent');
+      sh.exec(`${ngBin} build`);
       let destCss = path.join(process.cwd(), 'dist', 'app', 'test-component', 'test-component.component.css');
       expect(existsSync(destCss)).to.be.equal(true);
       let contents = fs.readFileSync(destCss, 'utf8');
@@ -290,7 +298,7 @@ describe('Basic end-to-end Workflow', function () {
 
       sh.rm('-f', destCss);
       process.chdir('src');
-      sh.exec('ng build --silent');
+      sh.exec(`${ngBin} build`);
       expect(existsSync(destCss)).to.be.equal(true);
       contents = fs.readFileSync(destCss, 'utf8');
       expect(contents).to.include('.outer .inner');
@@ -300,30 +308,52 @@ describe('Basic end-to-end Workflow', function () {
     });
   });
 
-  it('Turn on `noImplicitAny` in tsconfig.json and rebuild', function (done) {
+  it('Turn on `noImplicitAny` in tsconfig.json and rebuild', function () {
     this.timeout(420000);
 
     const configFilePath = path.join(process.cwd(), 'src', 'tsconfig.json');
     let config = require(configFilePath);
 
     config.compilerOptions.noImplicitAny = true;
-    fs.writeFileSync(configFilePath, JSON.stringify(config), 'utf8');
+    fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf8');
 
     sh.rm('-rf', path.join(process.cwd(), 'dist'));
 
-    return ng(['build', '--silent'])
-      .then(function () {
+    return ng(['build'])
+      .then(() => {
         expect(existsSync(path.join(process.cwd(), 'dist'))).to.be.equal(true);
-      })
-      .catch(() => {
-        throw new Error('Build failed.');
-      })
-      .finally(function () {
-        // Clean `tmp` folder
-        process.chdir(path.resolve(root, '..'));
-        // sh.rm('-rf', './tmp');  // tmp.teardown takes too long
-        done();
       });
   });
 
+  it('Turn on path mapping in tsconfig.json and rebuild', function () {
+    this.timeout(420000);
+
+    const configFilePath = path.join(process.cwd(), 'src', 'tsconfig.json');
+    let config = require(configFilePath);
+
+    config.compilerOptions.baseUrl = '';
+
+    // This should fail.
+    config.compilerOptions.paths = { '@angular/*': [] };
+    fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf8');
+
+    return ng(['build'])
+      .catch(() => {
+        return true;
+      })
+      .then((passed) => {
+        expect(passed).to.equal(true);
+      })
+      .then(() => {
+        // This should succeed.
+        config.compilerOptions.paths = {
+          '@angular/*': [ '*' ]
+        };
+        fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf8');
+      })
+      .then(() => ng(['build']))
+      .catch(() => {
+        expect('build failed where it should have succeeded').to.equal('');
+      });
+  });
 });
