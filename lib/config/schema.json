@@ -89,6 +89,12 @@
         },
         "styleExt": {
           "type": "string"
+        },
+        "prefixInterfaces": {
+          "type": "boolean"
+        },
+        "lazyRoutePrefix": {
+          "type": "string"
         }
       },
       "additionalProperties": false

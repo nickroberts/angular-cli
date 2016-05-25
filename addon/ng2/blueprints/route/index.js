@@ -118,10 +118,12 @@ module.exports = {
   },
 
   afterInstall: function (options) {
-    if (!options.skipRouterGeneration) {
-      this._addRouteToParent(options);
-      this._verifyParentRoute(options);
+    if (options.dryRun || options.skipRouterGeneration) {
+      return;
     }
+
+    this._addRouteToParent(options);
+    this._verifyParentRoute(options);
   },
 
   afterUninstall: function (options) {
@@ -214,9 +216,9 @@ module.exports = {
     }
 
     let isAppComponent = false;
-    let appComponentFile = 
-      path.join(this.project.root, 
-        this.dynamicPath.dir, 
+    let appComponentFile =
+      path.join(this.project.root,
+        this.dynamicPath.dir,
         this.project.name() + '.component.ts');
     if (parentFile == appComponentFile) {
       isAppComponent = true;
@@ -227,8 +229,14 @@ module.exports = {
 
     // Insert the import statement.
     let content = fs.readFileSync(parentFile, 'utf-8');
+    let lazyRoutePrefix = '+';
+    if (this.project.ngConfig &&
+        this.project.ngConfig.defaults &&
+        this.project.ngConfig.defaults.lazyRoutePrefix !== undefined) {
+      lazyRoutePrefix = this.project.ngConfig.defaults.lazyRoutePrefix;
+    }
     content = _insertImport(content, `${jsComponentName}Component`,
-                            `./${options.isLazyRoute ? '+' : ''}${stringUtils.dasherize(base)}`);
+                            `./${options.isLazyRoute ? lazyRoutePrefix : ''}${stringUtils.dasherize(base)}`);
 
     let defaultReg = options.default ? ', useAsDefault: true' : '';
     let routePath = options.path || `/${base}`;

@@ -86,4 +86,30 @@ describe('Acceptance: ng generate route', function () {
         expect(appContent).to.match(/path: '\/details\/:id'/m);
       });
   });
+
+  it('ng generate route my-route --dry-run does not modify files', () => {
+    var parentComponentPath = path.join(testPath, 'foo.component.ts');
+    var parentComponentHtmlPath = path.join(testPath, 'foo.component.html')
+
+    var unmodifiedParentComponent = fs.readFileSync(parentComponentPath, 'utf8');
+    var unmodifiedParentComponentHtml = fs.readFileSync(parentComponentHtmlPath, 'utf8');
+
+    return ng(['generate', 'route', 'my-route', '--dry-run']).then(() => {
+      var afterGenerateParentComponent = fs.readFileSync(parentComponentPath, 'utf8');
+      var afterGenerateParentHtml = fs.readFileSync(parentComponentHtmlPath, 'utf8');
+
+      expect(afterGenerateParentComponent).to.equal(unmodifiedParentComponent);
+      expect(afterGenerateParentHtml).to.equal(unmodifiedParentComponentHtml);
+    });
+  });
+  
+  it('lazy route prefix', () => {
+    return ng(['set', 'defaults.lazyRoutePrefix', 'myprefix'])
+      .then(() => ng(['generate', 'route', 'prefix-test']))
+      .then(() => {
+        var folderPath = path.join(testPath, 'myprefixprefix-test', 'prefix-test.component.ts');
+        expect(existsSync(folderPath))
+          .to.equal(true);
+      });
+  });
 });
