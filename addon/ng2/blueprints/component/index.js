@@ -2,9 +2,9 @@ var path = require('path');
 var chalk = require('chalk');
 var Blueprint = require('ember-cli/lib/models/blueprint');
 var dynamicPathParser = require('../../utilities/dynamic-path-parser');
-var addBarrelRegistration = require('../../utilities/barrel-management');
 var getFiles = Blueprint.prototype.files;
 const stringUtils = require('ember-cli-string-utils');
+const astUtils = require('../../utilities/ast-utils');
 
 module.exports = {
   description: '',
@@ -14,7 +14,8 @@ module.exports = {
     { name: 'route', type: Boolean, default: false },
     { name: 'inline-template', type: Boolean, default: false, aliases: ['it'] },
     { name: 'inline-style', type: Boolean, default: false, aliases: ['is'] },
-    { name: 'prefix', type: Boolean, default: true }
+    { name: 'prefix', type: Boolean, default: true },
+    { name: 'spec', type: Boolean, default: true }
   ],
 
   normalizeEntityName: function (entityName) {
@@ -49,29 +50,28 @@ module.exports = {
     return {
       dynamicPath: this.dynamicPath.dir.replace(this.dynamicPath.appRoot, ''),
       flat: options.flat,
+      spec: options.spec,
       inlineTemplate: options.inlineTemplate,
       inlineStyle: options.inlineStyle,
       route: options.route,
       isLazyRoute: !!options.isLazyRoute,
       isAppComponent: !!options.isAppComponent,
-      selector: this.selector
+      selector: this.selector,
+      styleExt: this.styleExt
     };
   },
 
   files: function() {
     var fileList = getFiles.call(this);
 
-    if (this.options && this.options.flat) {
-      fileList = fileList.filter(p => p.indexOf('index.ts') <= 0);
-    }
-    if (this.options && !this.options.route) {
-      fileList = fileList.filter(p => p.indexOf(path.join('shared', 'index.ts')) <= 0);
-    }
     if (this.options && this.options.inlineTemplate) {
       fileList = fileList.filter(p => p.indexOf('.html') < 0);
     }
     if (this.options && this.options.inlineStyle) {
       fileList = fileList.filter(p => p.indexOf('.__styleext__') < 0);
+    }
+    if (this.options && !this.options.spec) {
+      fileList = fileList.filter(p => p.indexOf('__name__.component.spec.ts') < 0);
     }
 
     return fileList;
@@ -113,26 +113,19 @@ module.exports = {
       return;
     }
 
-    if (!options.flat) {
-      var filePath = path.join(this.project.ngConfig.defaults.sourceDir, 'system-config.ts');
-      var barrelUrl = this.appDir.replace(/\\/g, '/');
-      if (barrelUrl[0] === '/') {
-        barrelUrl = barrelUrl.substr(1);
-      }
+    const returns = [];
+    const modulePath = path.join(this.project.root, this.dynamicPath.appRoot, 'app.module.ts');
+    const className = stringUtils.classify(`${options.entity.name}Component`);
+    const fileName = stringUtils.dasherize(`${options.entity.name}.component`);
+    const componentDir = path.relative(this.dynamicPath.appRoot, this.generatePath);
+    const importPath = componentDir ? `./${componentDir}/${fileName}` : `./${fileName}`;
 
-      return addBarrelRegistration(this, this.generatePath)
-        .then(() => {
-          return this.insertIntoFile(
-            filePath,
-            `  '${barrelUrl}',`,
-            { before: '  /** @cli-barrel */' }
-          );
-        });
-    } else {
-      return addBarrelRegistration(
-        this,
-        this.generatePath,
-        options.entity.name + '.component');
+    if (!options['skip-import']) {
+      returns.push(
+        astUtils.addComponentToModule(modulePath, className, importPath)
+          .then(change => change.apply()));
     }
+
+    return Promise.all(returns);
   }
 };
