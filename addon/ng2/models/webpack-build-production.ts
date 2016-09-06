@@ -1,40 +1,23 @@
 import * as path from 'path';
-import * as webpackMerge from 'webpack-merge'; // used to merge webpack configs
-import * as WebpackMd5Hash from 'webpack-md5-hash';
-import * as CompressionPlugin from 'compression-webpack-plugin';
+const WebpackMd5Hash = require('webpack-md5-hash');
+const CompressionPlugin = require('compression-webpack-plugin');
 import * as webpack from 'webpack';
-import { CliConfig } from './config';
 
-export const getWebpackProdConfigPartial = function(projectRoot: string, sourceDir: string) {
+export const getWebpackProdConfigPartial = function(projectRoot: string, appConfig: any) {
   return {
     debug: false,
     devtool: 'source-map',
     output: {
-      path: path.resolve(projectRoot, './dist'),
+      path: path.resolve(projectRoot, appConfig.outDir),
       filename: '[name].[chunkhash].bundle.js',
       sourceMapFilename: '[name].[chunkhash].bundle.map',
       chunkFilename: '[id].[chunkhash].chunk.js'
     },
-    module: {
-      preLoaders: [
-        {
-          test: /\.js$/,
-          loader: 'source-map-loader',
-          exclude: [
-            /node_modules/ // don't pull in vendor sourcemaps for production builds, increased speed for build
-          ]
-        }
-      ]
-    },
     plugins: [
       new WebpackMd5Hash(),
-      new webpack.optimize.DedupePlugin(),
-      // ~107kb
-      new webpack.optimize.UglifyJsPlugin({
-        beautify: false, //prod
-        mangle: { screw_ie8 : true, keep_fnames: true }, //prod
-        compress: { screw_ie8: true }, //prod
-        comments: false //prod
+      new webpack.optimize.UglifyJsPlugin(<any>{
+        mangle: { screw_ie8 : true },
+        compress: { screw_ie8: true }
       }),
       new CompressionPlugin({
           asset: '[path].gz[query]',
@@ -47,7 +30,7 @@ export const getWebpackProdConfigPartial = function(projectRoot: string, sourceD
     tslint: {
       emitErrors: true,
       failOnHint: true,
-      resourcePath: path.resolve(projectRoot, `./${sourceDir}`)
+      resourcePath: path.resolve(projectRoot, appConfig.root)
     },
     htmlLoader: {
       minimize: true,
@@ -69,5 +52,5 @@ export const getWebpackProdConfigPartial = function(projectRoot: string, sourceD
       clearImmediate: false,
       setImmediate: false
     }
-  }
+  };
 };

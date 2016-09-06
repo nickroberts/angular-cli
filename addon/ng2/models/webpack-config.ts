@@ -1,8 +1,5 @@
-import * as path from 'path';
-import * as fs from 'fs';
-import * as webpackMerge from 'webpack-merge';
+const webpackMerge = require('webpack-merge');
 import { CliConfig } from './config';
-import { NgCliEnvironmentPlugin } from '../utilities/environment-plugin';
 import {
   getWebpackCommonConfig,
   getWebpackDevConfigPartial,
@@ -15,49 +12,52 @@ export class NgCliWebpackConfig {
   // TODO: When webpack2 types are finished lets replace all these any types
   // so this is more maintainable in the future for devs
   public config: any;
-  private webpackDevConfigPartial: any;
-  private webpackProdConfigPartial: any;
-  private webpackBaseConfig: any;
-  private webpackMaterialConfig: any;
-  private webpackMaterialE2EConfig: any;
-  private webpackMobileConfigPartial: any;
-  private webpackMobileProdConfigPartial: any;
+  private devConfigPartial: any;
+  private prodConfigPartial: any;
+  private baseConfig: any;
 
-  constructor(public ngCliProject: any, public target: string, public environment: string) {
-    const sourceDir = CliConfig.fromProject().defaults.sourceDir;
+  constructor(
+    public ngCliProject: any,
+    public target: string,
+    public environment: string,
+    outputDir?: string,
+    baseHref?: string
+  ) {
+    const config: CliConfig = CliConfig.fromProject();
+    const appConfig = config.config.apps[0];
 
-    const environmentPath = `./${sourceDir}/app/environments/environment.${environment}.ts`;
+    appConfig.outDir = outputDir || appConfig.outDir;
 
-    this.webpackBaseConfig = getWebpackCommonConfig(this.ngCliProject.root, sourceDir);
-    this.webpackDevConfigPartial = getWebpackDevConfigPartial(this.ngCliProject.root, sourceDir);
-    this.webpackProdConfigPartial = getWebpackProdConfigPartial(this.ngCliProject.root, sourceDir);
+    this.baseConfig = getWebpackCommonConfig(
+      this.ngCliProject.root,
+      environment,
+      appConfig,
+      baseHref
+    );
+    this.devConfigPartial = getWebpackDevConfigPartial(this.ngCliProject.root, appConfig);
+    this.prodConfigPartial = getWebpackProdConfigPartial(this.ngCliProject.root, appConfig);
 
-    if (CliConfig.fromProject().apps[0].mobile){
-      this.webpackMobileConfigPartial = getWebpackMobileConfigPartial(this.ngCliProject.root, sourceDir);
-      this.webpackMobileProdConfigPartial = getWebpackMobileProdConfigPartial(this.ngCliProject.root, sourceDir);
-      this.webpackBaseConfig = webpackMerge(this.webpackBaseConfig, this.webpackMobileConfigPartial);
-      this.webpackProdConfigPartial = webpackMerge(this.webpackProdConfigPartial, this.webpackMobileProdConfigPartial);
+    if (appConfig.mobile) {
+      let mobileConfigPartial = getWebpackMobileConfigPartial(this.ngCliProject.root, appConfig);
+      let mobileProdConfigPartial = getWebpackMobileProdConfigPartial(this.ngCliProject.root,
+                                                                      appConfig);
+      this.baseConfig = webpackMerge(this.baseConfig, mobileConfigPartial);
+      this.prodConfigPartial = webpackMerge(this.prodConfigPartial, mobileProdConfigPartial);
     }
 
     this.generateConfig();
-    this.config.plugins.unshift(new NgCliEnvironmentPlugin({
-      path: path.resolve(this.ngCliProject.root, `./${sourceDir}/app/environments/`),
-      src: 'environment.ts',
-      dest: `environment.${this.environment}.ts`
-    }));
   }
 
   generateConfig(): void {
     switch (this.target) {
-      case "development":
-        this.config = webpackMerge(this.webpackBaseConfig, this.webpackDevConfigPartial);
+      case 'development':
+        this.config = webpackMerge(this.baseConfig, this.devConfigPartial);
         break;
-      case "production":
-        this.config = webpackMerge(this.webpackBaseConfig, this.webpackProdConfigPartial);
+      case 'production':
+        this.config = webpackMerge(this.baseConfig, this.prodConfigPartial);
         break;
       default:
         throw new Error("Invalid build target. Only 'development' and 'production' are available.");
-        break;
     }
   }
 }
