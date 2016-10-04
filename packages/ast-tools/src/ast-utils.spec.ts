@@ -3,8 +3,8 @@ import mockFs = require('mock-fs');
 import ts = require('typescript');
 import fs = require('fs');
 
-import {InsertChange, RemoveChange} from './change';
-import {insertAfterLastOccurrence, addComponentToModule} from './ast-utils';
+import {InsertChange, NodeHost, RemoveChange} from './change';
+import {insertAfterLastOccurrence, addDeclarationToModule} from './ast-utils';
 import {findNodes} from './node';
 import {it} from './spec-utils';
 
@@ -31,7 +31,7 @@ describe('ast-utils: findNodes', () => {
   it('finds no imports', () => {
     let editedFile = new RemoveChange(sourceFile, 0, `import * as myTest from 'tests' \n`);
     return editedFile
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         let rootNode = getRootNode(sourceFile);
         let nodes = findNodes(rootNode, ts.SyntaxKind.ImportDeclaration);
@@ -47,10 +47,10 @@ describe('ast-utils: findNodes', () => {
     // remove new line and add an inline import
     let editedFile = new RemoveChange(sourceFile, 32, '\n');
     return editedFile
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         let insert = new InsertChange(sourceFile, 32, `import {Routes} from '@angular/routes'`);
-        return insert.apply();
+        return insert.apply(NodeHost);
       })
       .then(() => {
         let rootNode = getRootNode(sourceFile);
@@ -61,7 +61,7 @@ describe('ast-utils: findNodes', () => {
   it('finds two imports from new line separated declarations', () => {
     let editedFile = new InsertChange(sourceFile, 33, `import {Routes} from '@angular/routes'`);
     return editedFile
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         let rootNode = getRootNode(sourceFile);
         let nodes = findNodes(rootNode, ts.SyntaxKind.ImportDeclaration);
@@ -89,7 +89,7 @@ describe('ast-utils: insertAfterLastOccurrence', () => {
     let imports = getNodesOfKind(ts.SyntaxKind.ImportDeclaration, sourceFile);
     return insertAfterLastOccurrence(imports, `\nimport { Router } from '@angular/router';`,
                                      sourceFile, 0)
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         return readFile(sourceFile, 'utf8');
       }).then((content) => {
@@ -106,12 +106,12 @@ describe('ast-utils: insertAfterLastOccurrence', () => {
     let content = `import { foo, bar } from 'fizz';`;
     let editedFile = new InsertChange(sourceFile, 0, content);
     return editedFile
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         let imports = getNodesOfKind(ts.SyntaxKind.ImportDeclaration, sourceFile);
         return insertAfterLastOccurrence(imports, ', baz', sourceFile,
           0, ts.SyntaxKind.Identifier)
-          .apply();
+          .apply(NodeHost);
       })
       .then(() => {
         return readFile(sourceFile, 'utf8');
@@ -122,12 +122,12 @@ describe('ast-utils: insertAfterLastOccurrence', () => {
     let content = `import * from 'foo' \n import { bar } from 'baz'`;
     let editedFile = new InsertChange(sourceFile, 0, content);
     return editedFile
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         let imports = getNodesOfKind(ts.SyntaxKind.ImportDeclaration, sourceFile);
         return insertAfterLastOccurrence(imports, `\nimport Router from '@angular/router'`,
           sourceFile)
-          .apply();
+          .apply(NodeHost);
       })
       .then(() => {
         return readFile(sourceFile, 'utf8');
@@ -142,12 +142,12 @@ describe('ast-utils: insertAfterLastOccurrence', () => {
     let content = `import {} from 'foo'`;
     let editedFile = new InsertChange(sourceFile, 0, content);
     return editedFile
-      .apply()
+      .apply(NodeHost)
       .then(() => {
         let imports = getNodesOfKind(ts.SyntaxKind.ImportDeclaration, sourceFile);
         return insertAfterLastOccurrence(imports, ', bar', sourceFile, undefined,
           ts.SyntaxKind.Identifier)
-          .apply();
+          .apply(NodeHost);
       })
       .catch(() => {
         return readFile(sourceFile, 'utf8');
@@ -160,7 +160,7 @@ describe('ast-utils: insertAfterLastOccurrence', () => {
           ts.SyntaxKind.CloseBraceToken).pop().pos;
         return insertAfterLastOccurrence(imports, ' bar ',
           sourceFile, pos, ts.SyntaxKind.Identifier)
-          .apply();
+          .apply(NodeHost);
       })
       .then(() => {
         return readFile(sourceFile, 'utf8');
@@ -172,7 +172,7 @@ describe('ast-utils: insertAfterLastOccurrence', () => {
 });
 
 
-describe('addComponentToModule', () => {
+describe('addDeclarationToModule', () => {
   beforeEach(() => {
     mockFs({
       '1.ts': `
@@ -210,8 +210,8 @@ class Module {}`
   afterEach(() => mockFs.restore());
 
   it('works with empty array', () => {
-    return addComponentToModule('1.ts', 'MyClass', 'MyImportPath')
-      .then(change => change.apply())
+    return addDeclarationToModule('1.ts', 'MyClass', 'MyImportPath')
+      .then(change => change.apply(NodeHost))
       .then(() => readFile('1.ts', 'utf-8'))
       .then(content => {
         expect(content).toEqual(
@@ -228,8 +228,8 @@ class Module {}`
   });
 
   it('works with array with declarations', () => {
-    return addComponentToModule('2.ts', 'MyClass', 'MyImportPath')
-      .then(change => change.apply())
+    return addDeclarationToModule('2.ts', 'MyClass', 'MyImportPath')
+      .then(change => change.apply(NodeHost))
       .then(() => readFile('2.ts', 'utf-8'))
       .then(content => {
         expect(content).toEqual(
@@ -249,8 +249,8 @@ class Module {}`
   });
 
   it('works without any declarations', () => {
-    return addComponentToModule('3.ts', 'MyClass', 'MyImportPath')
-      .then(change => change.apply())
+    return addDeclarationToModule('3.ts', 'MyClass', 'MyImportPath')
+      .then(change => change.apply(NodeHost))
       .then(() => readFile('3.ts', 'utf-8'))
       .then(content => {
         expect(content).toEqual(
@@ -267,8 +267,8 @@ class Module {}`
   });
 
   it('works without a declaration field', () => {
-    return addComponentToModule('4.ts', 'MyClass', 'MyImportPath')
-      .then(change => change.apply())
+    return addDeclarationToModule('4.ts', 'MyClass', 'MyImportPath')
+      .then(change => change.apply(NodeHost))
       .then(() => readFile('4.ts', 'utf-8'))
       .then(content => {
         expect(content).toEqual(

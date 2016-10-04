@@ -222,8 +222,8 @@ function _addSymbolToNgModuleMetadata(ngModulePath: string, metadataField: strin
           position = node.getEnd();
           // Get the indentation of the last element, if any.
           const text = node.getFullText(source);
-          if (text.startsWith('\n')) {
-            toInsert = `,${text.match(/^\n(\r?)\s+/)[0]}${metadataField}: [${symbolName}]`;
+          if (text.match('^\r?\r?\n')) {
+            toInsert = `,${text.match(/^\r?\n\s+/)[0]}${metadataField}: [${symbolName}]`;
           } else {
             toInsert = `, ${metadataField}: [${symbolName}]`;
           }
@@ -235,15 +235,16 @@ function _addSymbolToNgModuleMetadata(ngModulePath: string, metadataField: strin
       } else {
         // Get the indentation of the last element, if any.
         const text = node.getFullText(source);
-        if (text.startsWith('\n')) {
-          toInsert = `,${text.match(/^\n(\r?)\s+/)[0]}${symbolName}`;
+        if (text.match(/^\r?\n/)) {
+          toInsert = `,${text.match(/^\r?\n(\r?)\s+/)[0]}${symbolName}`;
         } else {
           toInsert = `, ${symbolName}`;
         }
       }
 
       const insert = new InsertChange(ngModulePath, position, toInsert);
-      const importInsert: Change = insertImport(ngModulePath, symbolName, importPath);
+      const importInsert: Change = insertImport(
+        ngModulePath, symbolName.replace(/\..*$/, ''), importPath);
       return new MultiChange([insert, importInsert]);
     });
 }
@@ -252,10 +253,20 @@ function _addSymbolToNgModuleMetadata(ngModulePath: string, metadataField: strin
 * Custom function to insert a declaration (component, pipe, directive)
 * into NgModule declarations. It also imports the component.
 */
-export function addComponentToModule(modulePath: string, classifiedName: string,
-    importPath: string): Promise<Change> {
+export function addDeclarationToModule(modulePath: string, classifiedName: string,
+                                       importPath: string): Promise<Change> {
 
   return _addSymbolToNgModuleMetadata(modulePath, 'declarations', classifiedName, importPath);
+}
+
+/**
+ * Custom function to insert a declaration (component, pipe, directive)
+ * into NgModule declarations. It also imports the component.
+ */
+export function addImportToModule(modulePath: string, classifiedName: string,
+                                  importPath: string): Promise<Change> {
+
+  return _addSymbolToNgModuleMetadata(modulePath, 'imports', classifiedName, importPath);
 }
 
 /**
