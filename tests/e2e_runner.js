@@ -95,6 +95,7 @@ testsToRun.reduce((previous, relativeName) => {
     return Promise.resolve()
       .then(() => printHeader(currentFileName))
       .then(() => fn(argv, () => clean = false))
+      .then(() => console.log('  ----'))
       .then(() => {
         // Only clean after a real test, not a setup step. Also skip cleaning if the test
         // requested an exception.
@@ -104,34 +105,34 @@ testsToRun.reduce((previous, relativeName) => {
       })
       .then(() => printFooter(currentFileName, start),
             (err) => {
-              printFooter(currentFileName, start); throw err;
+              printFooter(currentFileName, start);
+              console.error(err);
+              throw err;
             });
   });
 }, Promise.resolve())
-.then(
-  () => {
-    console.log(green('Done.'));
-    process.exit(0);
-  },
-  (err) => {
-    console.log('\n');
-    console.error(red(`Test "${currentFileName}" failed...`));
-    console.error(red(err.message));
-    console.error(red(err.stack));
+.then(() => {
+  console.log(green('Done.'));
+  process.exit(0);
+},
+(err) => {
+  console.log('\n');
+  console.error(red(`Test "${currentFileName}" failed...`));
+  console.error(red(err.message));
+  console.error(red(err.stack));
 
-    if (argv.debug) {
-      console.log(`Current Directory: ${process.cwd()}`);
-      console.log('Will loop forever while you debug... CTRL-C to quit.');
+  if (argv.debug) {
+    console.log(`Current Directory: ${process.cwd()}`);
+    console.log('Will loop forever while you debug... CTRL-C to quit.');
 
-      /* eslint-disable no-constant-condition */
-      while (1) {
-        // That's right!
-      }
+    /* eslint-disable no-constant-condition */
+    while (1) {
+      // That's right!
     }
-
-    process.exit(1);
   }
-);
+
+  process.exit(1);
+});
 
 
 function encode(str) {

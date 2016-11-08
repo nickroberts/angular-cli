@@ -1,9 +1,10 @@
 import * as webpack from 'webpack';
 import * as path from 'path';
+import {GlobCopyWebpackPlugin} from '../plugins/glob-copy-webpack-plugin';
 import {BaseHrefWebpackPlugin} from '@angular-cli/base-href-webpack';
 
-const CopyWebpackPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const autoprefixer = require('autoprefixer');
 
 
 export function getWebpackCommonConfig(
@@ -33,7 +34,8 @@ export function getWebpackCommonConfig(
   return {
     devtool: 'source-map',
     resolve: {
-      extensions: ['.ts', '.js']
+      extensions: ['.ts', '.js'],
+      modules: [path.resolve(projectRoot, 'node_modules')]
     },
     context: path.resolve(__dirname, './'),
     entry: entry,
@@ -70,40 +72,22 @@ export function getWebpackCommonConfig(
           loaders: ['raw-loader', 'postcss-loader', 'sass-loader']
         },
 
-        // outside of main, load it via style-loader
-        {
-          include: styles,
-          test: /\.css$/,
-          loaders: ['style-loader', 'css-loader', 'postcss-loader']
-        }, {
-          include: styles,
-          test: /\.styl$/,
-          loaders: ['style-loader', 'css-loader', 'postcss-loader', 'stylus-loader']
-        }, {
-          include: styles,
-          test: /\.less$/,
-          loaders: ['style-loader', 'css-loader', 'postcss-loader', 'less-loader']
-        }, {
-          include: styles,
-          test: /\.scss$|\.sass$/,
-          loaders: ['style-loader', 'css-loader', 'postcss-loader', 'sass-loader']
-        },
 
         // load global scripts using script-loader
         { include: scripts, test: /\.js$/, loader: 'script-loader' },
 
         { test: /\.json$/, loader: 'json-loader' },
         { test: /\.(jpg|png|gif)$/, loader: 'url-loader?limit=10000' },
-        { test: /\.html$/, loader: 'html-loader' },
+        { test: /\.html$/, loader: 'raw-loader' },
 
-        { test: /\.(otf|woff|ttf|svg)$/, loader: 'url?limit=10000' },
-        { test: /\.woff2$/, loader: 'url?limit=10000&mimetype=font/woff2' },
-        { test: /\.eot$/, loader: 'file' }
+        { test: /\.(otf|ttf|woff|woff2)$/, loader: 'url?limit=10000' },
+        { test: /\.(eot|svg)$/, loader: 'file' }
       ]
     },
     plugins: [
       new HtmlWebpackPlugin({
         template: path.resolve(appRoot, appConfig.index),
+        filename: path.resolve(appConfig.outDir, appConfig.index),
         chunksSortMode: 'dependency'
       }),
       new BaseHrefWebpackPlugin({
@@ -123,21 +107,26 @@ export function getWebpackCommonConfig(
       }),
       new webpack.optimize.CommonsChunkPlugin({
         minChunks: Infinity,
-        name: 'inline',
-        filename: 'inline.js',
-        sourceMapFilename: 'inline.map'
+        name: 'inline'
       }),
-      new CopyWebpackPlugin([{
-        context: path.resolve(appRoot, appConfig.assets),
-        from: { glob: '**/*', dot: true },
-        ignore: [ '.gitkeep' ],
-        to: path.resolve(projectRoot, appConfig.outDir, appConfig.assets)
-      }])
+      new GlobCopyWebpackPlugin({
+        patterns: appConfig.assets,
+        globOptions: {cwd: appRoot, dot: true, ignore: '**/.gitkeep'}
+      }),
+      new webpack.LoaderOptionsPlugin({
+        test: /\.(css|scss|sass|less|styl)$/,
+        options: {
+          postcss: [ autoprefixer() ]
+        },
+      }),
     ],
     node: {
       fs: 'empty',
       global: true,
       crypto: 'empty',
+      tls: 'empty',
+      net: 'empty',
+      process: true,
       module: false,
       clearImmediate: false,
       setImmediate: false
