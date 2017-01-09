@@ -2,21 +2,16 @@
 
 const ng = require('../helpers/ng');
 const tmp = require('../helpers/tmp');
-const conf = require('ember-cli/tests/helpers/conf');
 const SilentError = require('silent-error');
 const expect = require('chai').expect;
 
 describe('Acceptance: ng destroy', function () {
-  before(conf.setup);
-
-  after(conf.restore);
-
   beforeEach(function () {
     this.timeout(10000);
     return tmp.setup('./tmp').then(function () {
       process.chdir('./tmp');
     }).then(function () {
-      return ng(['new', 'foo', '--skip-npm', '--skip-bower']);
+      return ng(['new', 'foo', '--skip-npm']);
     });
   });
 

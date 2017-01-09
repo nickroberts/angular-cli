@@ -4,12 +4,11 @@ var ng = require('../helpers/ng');
 var expect = require('chai').expect;
 var walkSync = require('walk-sync');
 var glob = require('glob');
-var Blueprint = require('ember-cli/lib/models/blueprint');
+var Blueprint = require('angular-cli/ember-cli/lib/models/blueprint');
 var path = require('path');
 var tmp = require('../helpers/tmp');
 var root = path.join(__dirname, '../../packages/angular-cli');
 var util = require('util');
-var conf = require('ember-cli/tests/helpers/conf');
 var minimatch = require('minimatch');
 var intersect = require('lodash/intersection');
 var remove = require('lodash/remove');
@@ -23,14 +22,6 @@ var defaultIgnoredFiles = Blueprint.ignoredFiles;
 
 describe('Acceptance: ng init', function () {
   this.timeout(20000);
-
-  before(function () {
-    conf.setup();
-  });
-
-  after(function () {
-    conf.restore();
-  });
 
   beforeEach(function () {
     // Make a copy of defaultIgnoredFiles.
@@ -112,8 +103,7 @@ describe('Acceptance: ng init', function () {
   it('ng init', function () {
     return ng([
       'init',
-      '--skip-npm',
-      '--skip-bower'
+      '--skip-npm'
     ]).then(confirmBlueprinted);
   });
 
@@ -130,7 +120,6 @@ describe('Acceptance: ng init', function () {
         return ng([
           'init',
           '--skip-npm',
-          '--skip-bower',
           '--name',
           'tmp'
         ]);
@@ -142,15 +131,15 @@ describe('Acceptance: ng init', function () {
   });
 
   it('init an already init\'d folder', function () {
-    return ng(['init', '--skip-npm', '--skip-bower'])
+    return ng(['init', '--skip-npm'])
       .then(function () {
-        return ng(['init', '--skip-npm', '--skip-bower']);
+        return ng(['init', '--skip-npm']);
       })
       .then(confirmBlueprinted);
   });
 
   it('init a single file', function () {
-    return ng(['init', 'package.json', '--skip-npm', '--skip-bower'])
+    return ng(['init', 'package.json', '--skip-npm'])
       .then(function () {
         return 'package.json';
       })
@@ -158,15 +147,15 @@ describe('Acceptance: ng init', function () {
   });
 
   it('init a single file on already init\'d folder', function () {
-    return ng(['init', '--skip-npm', '--skip-bower'])
+    return ng(['init', '--skip-npm'])
       .then(function () {
-        return ng(['init', 'package.json', '--skip-npm', '--skip-bower']);
+        return ng(['init', 'package.json', '--skip-npm']);
       })
       .then(confirmBlueprinted);
   });
 
   it('init multiple files by glob pattern', function () {
-    return ng(['init', 'src/**', '--skip-npm', '--skip-bower'])
+    return ng(['init', 'src/**', '--skip-npm'])
       .then(function () {
         return 'src/**';
       })
@@ -174,15 +163,15 @@ describe('Acceptance: ng init', function () {
   });
 
   it('init multiple files by glob pattern on already init\'d folder', function () {
-    return ng(['init', '--skip-npm', '--skip-bower'])
+    return ng(['init', '--skip-npm'])
       .then(function () {
-        return ng(['init', 'src/**', '--skip-npm', '--skip-bower']);
+        return ng(['init', 'src/**', '--skip-npm']);
       })
       .then(confirmBlueprinted);
   });
 
   it('init multiple files by glob patterns', function () {
-    return ng(['init', 'src/**', 'package.json', '--skip-npm', '--skip-bower'])
+    return ng(['init', 'src/**', 'package.json', '--skip-npm'])
       .then(function () {
         return '{src/**,package.json}';
       })
@@ -190,9 +179,9 @@ describe('Acceptance: ng init', function () {
   });
 
   it('init multiple files by glob patterns on already init\'d folder', function () {
-    return ng(['init', '--skip-npm', '--skip-bower'])
+    return ng(['init', '--skip-npm'])
       .then(function () {
-        return ng(['init', 'src/**', 'package.json', '--skip-npm', '--skip-bower']);
+        return ng(['init', 'src/**', 'package.json', '--skip-npm']);
       })
       .then(confirmBlueprinted);
   });

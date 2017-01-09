@@ -1,4 +1,3 @@
-# /node_modules and /bower_components ignored by default
 dist/
 .git/
 tmp/
@@ -6,3 +5,6 @@ typings/
 
 # Ignore all blueprint files. We e2e tests those later on.
 packages/angular-cli/blueprints/*/files/
+
+# Ignore ember cli.
+packages/angular-cli/ember-cli/

@@ -1,6 +1,4 @@
-const Command = require('ember-cli/lib/models/command');
-import WebpackBuild from '../tasks/build-webpack';
-import WebpackBuildWatch from '../tasks/build-webpack-watch';
+const Command = require('../ember-cli/lib/models/command');
 
 export interface BuildOptions {
   target?: string;
@@ -11,6 +9,14 @@ export interface BuildOptions {
   supressSizes: boolean;
   baseHref?: string;
   aot?: boolean;
+  sourcemap?: boolean;
+  vendorChunk?: boolean;
+  verbose?: boolean;
+  progress?: boolean;
+  i18nFile?: string;
+  i18nFormat?: string;
+  locale?: string;
+  deployUrl?: string;
 }
 
 const BuildCommand = Command.extend({
@@ -31,38 +37,19 @@ const BuildCommand = Command.extend({
     { name: 'watcher',        type: String },
     { name: 'suppress-sizes', type: Boolean, default: false },
     { name: 'base-href',      type: String,  default: null, aliases: ['bh'] },
-    { name: 'aot',            type: Boolean, default: false }
+    { name: 'aot',            type: Boolean, default: false },
+    { name: 'sourcemap',      type: Boolean, default: true, aliases: ['sm'] },
+    { name: 'vendor-chunk',   type: Boolean, default: true },
+    { name: 'verbose',        type: Boolean, default: false },
+    { name: 'progress',       type: Boolean, default: true },
+    { name: 'i18n-file',      type: String, default: null },
+    { name: 'i18n-format',    type: String, default: null },
+    { name: 'locale',         type: String, default: null },
+    { name: 'deploy-url',     type: String,  default: null, aliases: ['d'] }
   ],
 
   run: function (commandOptions: BuildOptions) {
-    if (commandOptions.environment === '') {
-      if (commandOptions.target === 'development') {
-        commandOptions.environment = 'dev';
-      }
-      if (commandOptions.target === 'production') {
-        commandOptions.environment = 'prod';
-      }
-    }
-
-    const project = this.project;
-    const ui = this.ui;
-    const buildTask = commandOptions.watch ?
-      new WebpackBuildWatch({
-        cliProject: project,
-        ui: ui,
-        outputPath: commandOptions.outputPath,
-        target: commandOptions.target,
-        environment: commandOptions.environment
-      }) :
-      new WebpackBuild({
-        cliProject: project,
-        ui: ui,
-        outputPath: commandOptions.outputPath,
-        target: commandOptions.target,
-        environment: commandOptions.environment,
-      });
-
-    return buildTask.run(commandOptions);
+    return require('./build.run').default.call(this, commandOptions);
   }
 });
 

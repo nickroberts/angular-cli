@@ -3,8 +3,8 @@ import * as path from 'path';
 import * as os from 'os';
 
 const chalk = require('chalk');
-const EmberGenerateCommand = require('ember-cli/lib/commands/generate');
-const Blueprint = require('ember-cli/lib/models/blueprint');
+const EmberGenerateCommand = require('../ember-cli/lib/commands/generate');
+const Blueprint = require('../ember-cli/lib/models/blueprint');
 const SilentError = require('silent-error');
 
 
@@ -61,6 +61,7 @@ const aliasMap: { [alias: string]: string } = {
   'c': 'component',
   'd': 'directive',
   'e': 'enum',
+  'i': 'interface',
   'm': 'module',
   'p': 'pipe',
   'r': 'route',

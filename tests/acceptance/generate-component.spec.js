@@ -7,8 +7,7 @@ var expect = require('chai').expect;
 var path = require('path');
 var tmp = require('../helpers/tmp');
 var root = process.cwd();
-var conf = require('ember-cli/tests/helpers/conf');
-var Promise = require('ember-cli/lib/ext/promise');
+var Promise = require('angular-cli/ember-cli/lib/ext/promise');
 var SilentError = require('silent-error');
 const denodeify = require('denodeify');
 
@@ -16,16 +15,12 @@ const readFile = denodeify(fs.readFile);
 
 
 describe('Acceptance: ng generate component', function () {
-  before(conf.setup);
-
-  after(conf.restore);
-
   beforeEach(function () {
     this.timeout(10000);
     return tmp.setup('./tmp').then(function () {
       process.chdir('./tmp');
     }).then(function () {
-      return ng(['new', 'foo', '--skip-npm', '--skip-bower']);
+      return ng(['new', 'foo', '--skip-npm']);
     });
   });
 
@@ -152,6 +147,26 @@ describe('Acceptance: ng generate component', function () {
         expect(existsSync(testPath)).to.equal(true);
         var contents = fs.readFileSync(testPath, 'utf8');
         expect(contents.indexOf('selector: \'mycomp\'') === -1).to.equal(false);
+      });
+  });
+
+  it('mycomp --prefix= will not prefix selector', () => {
+    return ng(['generate', 'component', 'mycomp', '--prefix='])
+      .then(() => {
+        var testPath = path.join(root, 'tmp', 'foo', 'src', 'app', 'mycomp', 'mycomp.component.ts');
+        expect(existsSync(testPath)).to.equal(true);
+        var contents = fs.readFileSync(testPath, 'utf8');
+        expect(contents.indexOf('selector: \'mycomp\'') === -1).to.equal(false);
+      });
+  });
+
+  it('mycomp --prefix=test will prefix selector with \'test-\'', () => {
+    return ng(['generate', 'component', 'mycomp', '--prefix=test'])
+      .then(() => {
+        var testPath = path.join(root, 'tmp', 'foo', 'src', 'app', 'mycomp', 'mycomp.component.ts');
+        expect(existsSync(testPath)).to.equal(true);
+        var contents = fs.readFileSync(testPath, 'utf8');
+        expect(contents.indexOf('selector: \'test-mycomp\'') === -1).to.equal(false);
       });
   });
 

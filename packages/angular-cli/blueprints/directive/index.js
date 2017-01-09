@@ -1,10 +1,12 @@
 const path = require('path');
+const fs = require('fs');
+const chalk = require('chalk');
 const dynamicPathParser = require('../../utilities/dynamic-path-parser');
 const stringUtils = require('ember-cli-string-utils');
 const astUtils = require('../../utilities/ast-utils');
 const findParentModule = require('../../utilities/find-parent-module').default;
 const NodeHost = require('@angular-cli/ast-tools').NodeHost;
-const Blueprint = require('ember-cli/lib/models/blueprint');
+const Blueprint = require('../../ember-cli/lib/models/blueprint');
 const getFiles = Blueprint.prototype.files;
 
 module.exports = {
@@ -12,15 +14,30 @@ module.exports = {
 
   availableOptions: [
     { name: 'flat', type: Boolean, default: true },
-    { name: 'prefix', type: Boolean, default: true },
-    { name: 'spec', type: Boolean }
+    { name: 'prefix', type: String, default: null },
+    { name: 'spec', type: Boolean },
+    { name: 'skip-import', type: Boolean, default: false },
+    { name: 'module', type: String, aliases: ['m'] }
   ],
 
-  beforeInstall: function() {
-    try {
-      this.pathToModule = findParentModule(this.project, this.dynamicPath.dir);
-    } catch(e) {
-      throw `Error locating module for declaration\n\t${e}`;
+  beforeInstall: function(options) {
+    if (options.module) {
+      // Resolve path to module
+      const modulePath = options.module.endsWith('.ts') ? options.module : `${options.module}.ts`;
+      const parsedPath = dynamicPathParser(this.project, modulePath);
+      this.pathToModule = path.join(this.project.root, parsedPath.dir, parsedPath.base);
+
+      if (!fs.existsSync(this.pathToModule)) {
+        throw ' ';
+      }
+    } else {
+      try {
+        this.pathToModule = findParentModule(this.project, this.dynamicPath.dir);
+      } catch(e) {
+        if (!options.skipImport) {
+          throw `Error locating module for declaration\n\t${e}`;
+        }
+      }
     }
   },
 
@@ -35,7 +52,10 @@ module.exports = {
         this.project.ngConfig.apps[0].prefix) {
       defaultPrefix = this.project.ngConfig.apps[0].prefix;
     }
-    var prefix = this.options.prefix ? `${defaultPrefix}-` : '';
+
+    var prefix = (this.options.prefix === 'false' || this.options.prefix === '') ? '' : (this.options.prefix || defaultPrefix);
+    prefix = prefix && `${prefix}-`;
+
 
     this.selector = stringUtils.camelize(prefix + parsedPath.name);
     return parsedPath.name;
@@ -90,10 +110,11 @@ module.exports = {
     const relativeDir = path.relative(moduleDir, fullGeneratePath);
     const importPath = relativeDir ? `./${relativeDir}/${fileName}` : `./${fileName}`;
 
-    if (!options['skip-import']) {
+    if (!options.skipImport) {
       returns.push(
         astUtils.addDeclarationToModule(this.pathToModule, className, importPath)
           .then(change => change.apply(NodeHost)));
+      this._writeStatusToUI(chalk.yellow, 'update', path.relative(this.project.root, this.pathToModule));
     }
 
     return Promise.all(returns);

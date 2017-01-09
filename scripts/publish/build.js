@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-/*eslint-disable no-console */
+/* eslint-disable no-console */
 const chalk = require('chalk');
 const denodeify = require('denodeify');
 const fs = require('fs');
@@ -32,6 +32,26 @@ function copy(from, to) {
 }
 
 
+function rm(p) {
+  path.relative(process.cwd(), p);
+  return new Promise((resolve, reject) => {
+    fs.unlink(p, err => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+
+function getDeps(pkg) {
+  const packageJson = require(pkg.packageJson);
+  return Object.assign({}, packageJson['dependencies'], packageJson['devDependencies']);
+}
+
+
 // First delete the dist folder.
 Promise.resolve()
   .then(() => console.log('Deleting dist folder...'))
@@ -42,11 +62,12 @@ Promise.resolve()
     return Object.keys(packages)
       // Order packages in order of dependency.
       .sort((a, b) => {
-        const aPackageJson = require(packages[a].packageJson);
-        const bPackageJson = require(packages[b].packageJson);
-        if (Object.keys(aPackageJson['dependencies'] || {}).indexOf(b) == -1) {
+        const aDependsOnB = Object.keys(getDeps(packages[a])).indexOf(b) != -1;
+        const bDependsOnA = Object.keys(getDeps(packages[b])).indexOf(a) != -1;
+
+        if (!aDependsOnB && !bDependsOnA) {
           return 0;
-        } else if (Object.keys(bPackageJson['dependencies'] || {}).indexOf(a) == -1) {
+        } else if (aDependsOnB) {
           return 1;
         } else {
           return -1;
@@ -69,7 +90,7 @@ Promise.resolve()
   .then(() => console.log('Copying uncompiled resources...'))
   .then(() => glob(path.join(packagesRoot, '**/*'), { dot: true }))
   .then(files => {
-    console.log(`  Found ${files.length} files...`);
+    console.log(`Found ${files.length} files...`);
     return files
       .map((fileName) => path.relative(packagesRoot, fileName))
       .filter((fileName) => {
@@ -122,6 +143,14 @@ Promise.resolve()
       .reduce((promise, current) => {
         return promise.then(() => current);
       }, Promise.resolve());
+  })
+  .then(() => glob(path.join(dist, '**/*.spec.*')))
+  .then(specFiles => specFiles.filter(fileName => {
+    return !/[\\\/]angular-cli[\\\/]blueprints/.test(fileName);
+  }))
+  .then(specFiles => {
+    console.log(`Found ${specFiles.length} spec files...`);
+    return Promise.all(specFiles.map(rm));
   })
   .then(() => {
     // Copy all resources that might have been missed.
