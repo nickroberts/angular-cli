@@ -1,3 +1,4 @@
+import * as chalk from 'chalk';
 import LinkCli from '../tasks/link-cli';
 import NpmInstall from '../tasks/npm-install';
 
@@ -64,24 +65,17 @@ export default function initRun(commandOptions: any, rawArgs: string[]) {
     sourceDir: commandOptions.sourceDir,
     style: commandOptions.style,
     prefix: commandOptions.prefix,
-    mobile: commandOptions.mobile,
     routing: commandOptions.routing,
     inlineStyle: commandOptions.inlineStyle,
     inlineTemplate: commandOptions.inlineTemplate,
     ignoredUpdateFiles: ['favicon.ico'],
-    skipGit: commandOptions.skipGit
+    skipGit: commandOptions.skipGit,
+    skipTests: commandOptions.skipTests
   };
 
   if (!validProjectName(packageName)) {
     return Promise.reject(
       new SilentError('We currently do not support a name of `' + packageName + '`.'));
-  }
-
-  if (commandOptions.mobile) {
-    return Promise.reject(new SilentError(
-      'The --mobile flag has been disabled temporarily while we await an update of ' +
-      'angular-universal for supporting NgModule. Sorry for the inconvenience.'
-    ));
   }
 
   blueprintOpts.blueprint = normalizeBlueprint(blueprintOpts.blueprint);
@@ -91,7 +85,7 @@ export default function initRun(commandOptions: any, rawArgs: string[]) {
       if (commandOptions.skipGit === false) {
         return gitInit.run(commandOptions, rawArgs);
       }
-    }.bind(this))
+    })
     .then(function () {
       if (!commandOptions.skipNpm) {
         return npmInstall.run();
@@ -101,5 +95,8 @@ export default function initRun(commandOptions: any, rawArgs: string[]) {
       if (commandOptions.linkCli) {
         return linkCli.run();
       }
+    })
+    .then(() => {
+      this.ui.writeLine(chalk.green(`Project '${packageName}' successfully created.`));
     });
 }

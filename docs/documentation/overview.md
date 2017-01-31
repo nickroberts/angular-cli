@@ -1,3 +1,5 @@
+<!-- Links in /docs/documentation should NOT have `.md` at the end, because they end up in our wiki at release. -->
+
 # Angular CLI
 
 ### Overview
@@ -107,7 +109,7 @@ your app.
 
 ### Additional Commands
 * [ng new](new)
-* [ng init](init)
+* [ng update](update)
 * [ng serve](serve)
 * [ng generate](generate)
 * [ng test](test)

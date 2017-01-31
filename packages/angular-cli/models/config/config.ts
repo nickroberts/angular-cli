@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import {SchemaClass, SchemaClassFactory} from '../json-schema/schema-class-factory';
+import {SchemaClass, SchemaClassFactory} from '@ngtools/json-schema';
 
 
 const DEFAULT_CONFIG_SCHEMA_PATH = path.join(__dirname, '../../lib/config/schema.json');
@@ -69,7 +69,9 @@ export class CliConfig<JsonType> {
   }
 
   static fromConfigPath<T>(configPath: string, otherPath: string[] = []): CliConfig<T> {
-    const configContent = fs.readFileSync(configPath, 'utf-8');
+    const configContent = fs.existsSync(configPath)
+      ? fs.readFileSync(configPath, 'utf-8')
+      : '{}';
     const schemaContent = fs.readFileSync(DEFAULT_CONFIG_SCHEMA_PATH, 'utf-8');
     const otherContents = otherPath
       .map(path => fs.existsSync(path) && fs.readFileSync(path, 'utf-8'))

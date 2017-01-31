@@ -10,7 +10,6 @@ module.exports = {
     { name: 'source-dir', type: String, default: 'src', aliases: ['sd'] },
     { name: 'prefix', type: String, default: 'app', aliases: ['p'] },
     { name: 'style', type: String, default: 'css' },
-    { name: 'mobile', type: Boolean, default: false },
     { name: 'routing', type: Boolean, default: false },
     { name: 'inline-style', type: Boolean, default: false, aliases: ['is'] },
     { name: 'inline-template', type: Boolean, default: false, aliases: ['it'] },
@@ -23,27 +22,17 @@ module.exports = {
     }
   },
 
-  afterInstall: function (options) {
-    if (options.mobile) {
-      return Blueprint.load(path.join(__dirname, '../mobile')).install(options);
-    }
-  },
-
   locals: function(options) {
     this.styleExt = options.style;
     this.version = require(path.resolve(__dirname, '../../package.json')).version;
+    // set this.tests to opposite of skipTest options, meaning if tests are being skipped then the default.spec.BLUEPRINT will be false
+    this.tests = options.skipTests ? false : true;
 
     // Split/join with / not path.sep as reference to typings require forward slashes.
     const relativeRootPath = options.sourceDir.split('/').map(() => '..').join('/');
     const fullAppName = stringUtils.dasherize(options.entity.name)
       .replace(/-(.)/g, (_, l) => ' ' + l.toUpperCase())
       .replace(/^./, (l) => l.toUpperCase());
-
-    // For mobile projects, force inline styles and templates.
-    if (options.mobile) {
-      options.inlineStyle = true;
-      options.inlineTemplate = true;
-    }
 
     return {
       htmlComponentName: stringUtils.dasherize(options.entity.name),
@@ -54,10 +43,10 @@ module.exports = {
       prefix: options.prefix,
       styleExt: this.styleExt,
       relativeRootPath: relativeRootPath,
-      isMobile: options.mobile,
       routing: options.routing,
       inlineStyle: options.inlineStyle,
-      inlineTemplate: options.inlineTemplate
+      inlineTemplate: options.inlineTemplate,
+      tests: this.tests
     };
   },
 
@@ -75,6 +64,10 @@ module.exports = {
     }
     if (this.options && this.options.skipGit) {
       fileList = fileList.filter(p => p.indexOf('gitignore') < 0);
+    }
+
+    if (this.options && this.options.skipTests) {
+      fileList = fileList.filter(p => p.indexOf('app.component.spec.ts') < 0);
     }
 
     return fileList;

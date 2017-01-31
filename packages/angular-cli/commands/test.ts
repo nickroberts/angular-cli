@@ -1,11 +1,10 @@
-const TestCommand = require('../ember-cli/lib/commands/test');
+const EmberTestCommand = require('../ember-cli/lib/commands/test');
 import TestTask from '../tasks/test';
 import {CliConfig} from '../models/config';
 
 export interface TestOptions {
   watch?: boolean;
   codeCoverage?: boolean;
-  lint?: boolean;
   singleRun?: boolean;
   browsers?: string;
   colors?: boolean;
@@ -18,11 +17,10 @@ export interface TestOptions {
 }
 
 
-const NgCliTestCommand = TestCommand.extend({
+const TestCommand = EmberTestCommand.extend({
   availableOptions: [
     { name: 'watch', type: Boolean, default: true, aliases: ['w'] },
     { name: 'code-coverage', type: Boolean, default: false, aliases: ['cc'] },
-    { name: 'lint', type: Boolean, default: false, aliases: ['l'] },
     { name: 'single-run', type: Boolean, default: false, aliases: ['sr'] },
     { name: 'progress', type: Boolean, default: true},
     { name: 'browsers', type: String },
@@ -50,5 +48,5 @@ const NgCliTestCommand = TestCommand.extend({
   }
 });
 
-NgCliTestCommand.overrideCore = true;
-export default NgCliTestCommand;
+TestCommand.overrideCore = true;
+export default TestCommand;

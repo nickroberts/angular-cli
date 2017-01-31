@@ -3,7 +3,6 @@
 var Command     = require('../models/command');
 var SilentError = require('silent-error');
 var path        = require('path');
-var win         = require('../utilities/windows-admin');
 var existsSync  = require('exists-sync');
 
 var defaultPort = 7357;
@@ -32,20 +31,10 @@ module.exports = Command.extend({
 
   init: function() {
     this.assign    = require('lodash/assign');
-    this.quickTemp = require('quick-temp');
 
     if (!this.testing) {
       process.env.EMBER_CLI_TEST_COMMAND = true;
     }
-  },
-
-  tmp: function() {
-    return this.quickTemp.makeOrRemake(this, '-testsDist');
-  },
-
-  rmTmp: function() {
-    this.quickTemp.remove(this, '-testsDist');
-    this.quickTemp.remove(this, '-customConfigFile');
   },
 
   _generateCustomConfigs: function(options) {

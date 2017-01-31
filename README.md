@@ -7,7 +7,7 @@
 [![devDependency Status][david-dev-badge]][david-dev-badge-url]
 [![npm][npm-badge]][npm-badge-url]
 
-Prototype of a CLI for Angular 2 applications based on the [ember-cli](http://www.ember-cli.com/) project.
+Prototype of a CLI for Angular applications based on the [ember-cli](http://www.ember-cli.com/) project.
 
 ## Note
 
@@ -46,8 +46,7 @@ with NPM 3 or higher.
 * [Running End-to-End Tests](#running-end-to-end-tests)
 * [Proxy To Backend](#proxy-to-backend)
 * [Deploying the App via GitHub Pages](#deploying-the-app-via-github-pages)
-* [Linting and formatting code](#linting-and-formatting-code)
-* [Support for offline applications](#support-for-offline-applications)
+* [Linting code](#linting-code)
 * [Commands autocompletion](#commands-autocompletion)
 * [Project assets](#project-assets)
 * [Global styles](#global-styles)
@@ -116,10 +115,19 @@ Module    | `ng g module my-module`
 
 ### Generating a route
 
-Generating routes in the CLI has been disabled for the time being. A new router and new route generation blueprints are coming.
+The CLI supports routing in several ways:
 
-You can read the official documentation for the new Router here: https://angular.io/docs/ts/latest/guide/router.html. Please note that even though route generation is disabled, building your projects with routing is still fully supported.
+- We include the `@angular/router` NPM package when creating or initializing a project.
 
+- When you generate a module, you can use the `--routing` option like `ng g module my-module --routing`  to create a separate file `my-module-routing.module.ts` to store the module routes.
+
+  The file includes an empty `Routes` object that you can fill with routes to different components and/or modules.
+
+  The `--routing` option also generates a default component with the same name as the module.
+
+- You can use the `--routing` option with `ng new` to create a `app-routing.module.ts` file when you create or initialize a project.
+
+<!-- DeleteSection1 Start here to remove upon next release -->
 ### Creating a build
 
 ```bash
@@ -189,7 +197,7 @@ Tests will execute after a build is executed via [Karma](http://karma-runner.git
 
 You can run tests with coverage via `--code-coverage`. The coverage report will be in the `coverage/` directory.
 
-Linting during tests is also available via the `--lint` flag. See [Linting and formatting code](#linting-and-formatting-code) chapter for more informations.
+Linting during tests is also available via the `--lint` flag. See [Linting code](#linting-code) chapter for more information.
 
 ### Running end-to-end tests
 
@@ -243,11 +251,11 @@ This will do the following:
 - rebuilds the app in production mode at the current `HEAD`
 - creates a local `gh-pages` branch if one doesn't exist
 - moves your app to the `gh-pages` branch and creates a commit
-- edit the base tag in index.html to support github pages
-- pushes the `gh-pages` branch to github
+- edit the base tag in index.html to support GitHub Pages
+- pushes the `gh-pages` branch to GitHub
 - returns back to the original `HEAD`
 
-Creating the repo requires a token from github, and the remaining functionality
+Creating the repo requires a token from GitHub, and the remaining functionality
 relies on ssh authentication for all git operations that communicate with github.com.
 To simplify the authentication, be sure to [setup your ssh keys](https://help.github.com/articles/generating-ssh-keys/).
 
@@ -257,23 +265,20 @@ If you are deploying a [user or organization page](https://help.github.com/artic
 ng github-pages:deploy --user-page --message "Optional commit message"
 ```
 
-This command pushes the app to the `master` branch on the github repo instead
+This command pushes the app to the `master` branch on the GitHub repo instead
 of pushing to `gh-pages`, since user and organization pages require this.
 
 
-### Linting and formatting code
+### Linting code
 
 You can lint your app code by running `ng lint`.
 This will use the `lint` npm script that in generated projects uses `tslint`.
 
 You can modify the these scripts in `package.json` to run whatever tool you prefer.
 
-### Support for offline applications
+<!-- DeleteSection1 End here -->
 
-**The `--mobile` flag has been disabled temporarily. Sorry for the inconvenience.**
-
-~~Angular-CLI includes support for offline applications via the `--` flag on `ng new`. Support is experimental, please see the angular/mobile-toolkit project and https://mobile.angular.io/ for documentation on how to make use of this functionality.~~
-
+ <!-- consider removing autocompletion from readme -->
 ### Commands autocompletion
 
 To turn on auto completion use the following commands:
@@ -306,6 +311,7 @@ You use the `assets` array in `angular-cli.json` to list files or folders you wa
 ]
 ```
 
+<!-- DeleteSection2 Start here to remove upon next release -->
 ### Global styles
 
 The `styles.css` file allows users to add global styles and supports
@@ -416,6 +422,8 @@ Finally add the Bootstrap CSS to the `apps[0].styles` array:
 Restart `ng serve` if you're running it, and Bootstrap 4 should be working on
 your app.
 
+<!-- DeleteSection2 End here -->
+
 ### Updating angular-cli
 
 To update `angular-cli` to a new version, you must update both the global package and your project's local package.
@@ -429,15 +437,15 @@ npm install -g angular-cli@latest
 
 Local project package:
 ```bash
-rm -rf node_modules dist tmp
+rm -rf node_modules dist # use rmdir on Windows
 npm install --save-dev angular-cli@latest
 npm install
-ng init
+ng update
 ```
 
-Running `ng init` will check for changes in all the auto-generated files created by `ng new` and allow you to update yours. You are offered four choices for each changed file: `y` (overwrite), `n` (don't overwrite), `d` (show diff between your file and the updated file) and `h` (help).
+Running `ng update` will check for changes in all the auto-generated files created by `ng new` and allow you to update yours. You are offered four choices for each changed file: `y` (overwrite), `n` (don't overwrite), `d` (show diff between your file and the updated file) and `h` (help).
 
-Carefully read the diffs for each code file, and either accept the changes or incorporate them manually after `ng init` finishes.
+Carefully read the diffs for each code file, and either accept the changes or incorporate them manually after `ng update` finishes.
 
 **The main cause of errors after an update is failing to incorporate these updates into your code**.
 
