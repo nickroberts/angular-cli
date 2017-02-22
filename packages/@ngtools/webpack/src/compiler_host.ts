@@ -187,8 +187,11 @@ export class WebpackCompilerHost implements ts.CompilerHost {
   }
 
   invalidate(fileName: string): void {
-    this._files[fileName] = null;
-    this._changedFiles[fileName] = true;
+    fileName = this._resolve(fileName);
+    if (fileName in this._files) {
+      this._files[fileName] = null;
+      this._changedFiles[fileName] = true;
+    }
   }
 
   fileExists(fileName: string): boolean {
@@ -238,7 +241,7 @@ export class WebpackCompilerHost implements ts.CompilerHost {
     return delegated.concat(subdirs);
   }
 
-  getSourceFile(fileName: string, languageVersion: ts.ScriptTarget, onError?: OnErrorFn) {
+  getSourceFile(fileName: string, languageVersion: ts.ScriptTarget, _onError?: OnErrorFn) {
     fileName = this._resolve(fileName);
 
     if (this._files[fileName] == null) {
@@ -262,8 +265,8 @@ export class WebpackCompilerHost implements ts.CompilerHost {
   // This is due to typescript CompilerHost interface being weird on writeFile. This shuts down
   // typings in WebStorm.
   get writeFile() {
-    return (fileName: string, data: string, writeByteOrderMark: boolean,
-            onError?: (message: string) => void, sourceFiles?: ts.SourceFile[]): void => {
+    return (fileName: string, data: string, _writeByteOrderMark: boolean,
+            _onError?: (message: string) => void, _sourceFiles?: ts.SourceFile[]): void => {
       fileName = this._resolve(fileName);
       this._setFileContent(fileName, data);
     };

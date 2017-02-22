@@ -24,16 +24,21 @@ export interface AotPluginOptions {
   mainPath?: string;
   typeChecking?: boolean;
   skipCodeGeneration?: boolean;
+  hostOverrideFileSystem?: { [path: string]: string };
+  hostReplacementPaths?: { [path: string]: string };
   i18nFile?: string;
   i18nFormat?: string;
   locale?: string;
 
   // Use tsconfig to include path globs.
   exclude?: string | string[];
+  compilerOptions?: ts.CompilerOptions;
 }
 
 
 export class AotPlugin implements Tapable {
+  private _options: AotPluginOptions;
+
   private _compilerOptions: ts.CompilerOptions;
   private _angularCompilerOptions: AngularCompilerOptions;
   private _program: ts.Program;
@@ -61,9 +66,11 @@ export class AotPlugin implements Tapable {
   private _firstRun = true;
 
   constructor(options: AotPluginOptions) {
-    this._setupOptions(options);
+    this._options = Object.assign({}, options);
+    this._setupOptions(this._options);
   }
 
+  get options() { return this._options; }
   get basePath() { return this._basePath; }
   get compilation() { return this._compilation; }
   get compilerHost() { return this._compilerHost; }
@@ -103,10 +110,18 @@ export class AotPlugin implements Tapable {
 
     let tsConfigJson: any = null;
     try {
-      tsConfigJson = JSON.parse(fs.readFileSync(this._tsConfigPath, 'utf8'));
+      tsConfigJson = JSON.parse(ts.sys.readFile(this._tsConfigPath));
     } catch (err) {
       throw new Error(`An error happened while parsing ${this._tsConfigPath} JSON: ${err}.`);
     }
+
+    if (options.hasOwnProperty('compilerOptions')) {
+      tsConfigJson.compilerOptions = Object.assign({},
+        tsConfigJson.compilerOptions,
+        options.compilerOptions
+      );
+    }
+
     const tsConfig = ts.parseJsonConfigFileContent(
       tsConfigJson, ts.sys, basePath, null, this._tsConfigPath);
 
@@ -167,6 +182,22 @@ export class AotPlugin implements Tapable {
     }
 
     this._compilerHost = new WebpackCompilerHost(this._compilerOptions, this._basePath);
+
+    // Override some files in the FileSystem.
+    if (options.hasOwnProperty('hostOverrideFileSystem')) {
+      for (const filePath of Object.keys(options.hostOverrideFileSystem)) {
+        this._compilerHost.writeFile(filePath, options.hostOverrideFileSystem[filePath], false);
+      }
+    }
+    // Override some files in the FileSystem with paths from the actual file system.
+    if (options.hasOwnProperty('hostReplacementPaths')) {
+      for (const filePath of Object.keys(options.hostReplacementPaths)) {
+        const replacementFilePath = options.hostReplacementPaths[filePath];
+        const content = this._compilerHost.readFile(replacementFilePath);
+        this._compilerHost.writeFile(filePath, content, false);
+      }
+    }
+
     this._program = ts.createProgram(
       this._rootFilePath, this._compilerOptions, this._compilerHost);
 
@@ -184,8 +215,8 @@ export class AotPlugin implements Tapable {
 
     // still no _entryModule? => try to resolve from mainPath
     if (!this._entryModule && options.mainPath) {
-      this._entryModule = resolveEntryModuleFromMain(options.mainPath, this._compilerHost,
-        this._program);
+      const mainPath = path.resolve(basePath, options.mainPath);
+      this._entryModule = resolveEntryModuleFromMain(mainPath, this._compilerHost, this._program);
     }
 
     if (options.hasOwnProperty('i18nFile')) {
@@ -228,12 +259,16 @@ export class AotPlugin implements Tapable {
   apply(compiler: any) {
     this._compiler = compiler;
 
-    compiler.plugin('invalid', (fileName: string) => {
+    compiler.plugin('invalid', () => {
       // Turn this off as soon as a file becomes invalid and we're about to start a rebuild.
       this._firstRun = false;
       this._diagnoseFiles = {};
 
-      this._compilerHost.invalidate(fileName);
+      if (compiler.watchFileSystem.watcher) {
+        compiler.watchFileSystem.watcher.once('aggregated', (changes: string[]) => {
+          changes.forEach((fileName: string) => this._compilerHost.invalidate(fileName));
+        });
+      }
     });
 
     // Add lazy modules to the context module for @angular/core/src/linker
@@ -252,7 +287,8 @@ export class AotPlugin implements Tapable {
           result.resource = this.skipCodeGeneration ? this.basePath : this.genDir;
           result.recursive = true;
           result.dependencies.forEach((d: any) => d.critical = false);
-          result.resolveDependencies = (p1: any, p2: any, p3: any, p4: RegExp, cb: any ) => {
+          result.resolveDependencies = (_fs: any, _resource: any, _recursive: any,
+            _regExp: RegExp, cb: any) => {
             const dependencies = Object.keys(this._lazyRoutes)
               .map((key) => {
                 const value = this._lazyRoutes[key];
