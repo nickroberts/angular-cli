@@ -22,14 +22,28 @@ const configCacheMap = new Map<string, CliConfigBase<ConfigInterface>>();
 
 export class CliConfig extends CliConfigBase<ConfigInterface> {
   static configFilePath(projectPath?: string): string {
+    const configNames = [CLI_CONFIG_FILE_NAME, CLI_CONFIG_FILE_NAME_ALT];
     // Find the configuration, either where specified, in the Angular CLI project
     // (if it's in node_modules) or from the current process.
-    return (projectPath && findUp(CLI_CONFIG_FILE_NAME, projectPath))
-        || (projectPath && findUp(CLI_CONFIG_FILE_NAME_ALT, projectPath))
-        || findUp(CLI_CONFIG_FILE_NAME, process.cwd())
-        || findUp(CLI_CONFIG_FILE_NAME_ALT, process.cwd())
-        || findUp(CLI_CONFIG_FILE_NAME, __dirname)
-        || findUp(CLI_CONFIG_FILE_NAME_ALT, __dirname);
+    return (projectPath && findUp(configNames, projectPath))
+        || findUp(configNames, process.cwd())
+        || findUp(configNames, __dirname);
+  }
+
+  static getValue(jsonPath: string): any {
+    let value;
+
+    const projectConfig = CliConfig.fromProject();
+    if (projectConfig) {
+      value = projectConfig.get(jsonPath);
+    } else {
+      const globalConfig = CliConfig.fromGlobal();
+      if (globalConfig) {
+        value = globalConfig.get(jsonPath);
+      }
+    }
+
+    return value;
   }
 
   static globalConfigFilePath(): string {

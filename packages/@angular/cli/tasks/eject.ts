@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import * as webpack from 'webpack';
 
+import { getAppFromConfig } from '../utilities/app-utils';
 import { EjectTaskOptions } from '../commands/eject';
 import { NgCliWebpackConfig } from '../models/webpack-config';
 import { CliConfig } from '../models/config';
@@ -30,6 +31,8 @@ const ProgressPlugin = require('webpack/lib/ProgressPlugin');
 
 export const pluginArgs = Symbol('plugin-args');
 export const postcssArgs = Symbol('postcss-args');
+
+const pree2eNpmScript = `webdriver-manager update --standalone false --gecko false --quiet`;
 
 
 class JsonWebpackSerializer {
@@ -398,15 +401,17 @@ export default Task.extend({
     const project = this.cliProject;
     const cliConfig = CliConfig.fromProject();
     const config = cliConfig.config;
-    const tsConfigPath = path.join(process.cwd(), config.apps[0].root, config.apps[0].tsconfig);
-    const outputPath = runTaskOptions.outputPath || config.apps[0].outDir;
+    const appConfig = getAppFromConfig(runTaskOptions.app);
+
+    const tsConfigPath = path.join(process.cwd(), appConfig.root, appConfig.tsconfig);
+    const outputPath = runTaskOptions.outputPath || appConfig.outDir;
     const force = runTaskOptions.force;
 
     if (project.root === outputPath) {
       throw new SilentError ('Output path MUST not be project root directory!');
     }
 
-    const webpackConfig = new NgCliWebpackConfig(runTaskOptions).buildConfig();
+    const webpackConfig = new NgCliWebpackConfig(runTaskOptions, appConfig).buildConfig();
     const serializer = new JsonWebpackSerializer(process.cwd(), outputPath);
     const output = serializer.serialize(webpackConfig);
     const webpackConfigStr = `${serializer.generateVariables()}\n\nmodule.exports = ${output};\n`;
@@ -426,32 +431,49 @@ export default Task.extend({
         const scripts = packageJson['scripts'];
         if (scripts['build'] && scripts['build'] !== 'ng build' && !force) {
           throw new SilentError(oneLine`
-            Your package.json scripts needs to not contain a build script as it will be overwritten.
+            Your package.json scripts must not contain a build script as it will be overwritten.
           `);
         }
         if (scripts['start'] && scripts['start'] !== 'ng serve' && !force) {
           throw new SilentError(oneLine`
-            Your package.json scripts needs to not contain a start script as it will be overwritten.
+            Your package.json scripts must not contain a start script as it will be overwritten.
+          `);
+        }
+        if (scripts['pree2e'] && scripts['prepree2e'] !== 'npm start' && !force) {
+          throw new SilentError(oneLine`
+            Your package.json scripts needs to not contain a prepree2e script as it will be
+            overwritten.
+          `);
+        }
+        if (scripts['pree2e'] && scripts['pree2e'] !== pree2eNpmScript && !force) {
+          throw new SilentError(oneLine`
+            Your package.json scripts must not contain a pree2e script as it will be
+            overwritten.
           `);
         }
         if (scripts['e2e'] && scripts['e2e'] !== 'ng e2e' && !force) {
           throw new SilentError(oneLine`
-            Your package.json scripts needs to not contain a e2e script as it will be overwritten.
+            Your package.json scripts must not contain a e2e script as it will be overwritten.
           `);
         }
         if (scripts['test'] && scripts['test'] !== 'ng test' && !force) {
           throw new SilentError(oneLine`
-            Your package.json scripts needs to not contain a test script as it will be overwritten.
+            Your package.json scripts must not contain a test script as it will be overwritten.
           `);
         }
 
         packageJson['scripts']['build'] = 'webpack';
-        packageJson['scripts']['start'] = 'webpack-dev-server';
+        packageJson['scripts']['start'] = 'webpack-dev-server --port=4200';
         packageJson['scripts']['test'] = 'karma start ./karma.conf.js';
+        packageJson['scripts']['prepree2e'] = 'npm start';
+        packageJson['scripts']['pree2e'] = pree2eNpmScript;
         packageJson['scripts']['e2e'] = 'protractor ./protractor.conf.js';
 
         // Add new dependencies based on our dependencies.
         const ourPackageJson = require('../package.json');
+        if (!packageJson['devDependencies']) {
+          packageJson['devDependencies'] = {};
+        }
         packageJson['devDependencies']['webpack-dev-server']
             = ourPackageJson['dependencies']['webpack-dev-server'];
 
