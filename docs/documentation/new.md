@@ -8,22 +8,132 @@
 Default applications are created in a directory of the same name, with an initialized Angular application.
 
 ## Options
-`--dry-run` (`-d`) run through without making any changes
+<details>
+  <summary>directory</summary>
+  <p>
+    `--directory` (alias: `-dir`) _default value: dir_
+  </p>
+  <p>
+    The directory name to create the app in.
+  </p>
+</details>
 
-`--skip-install` (`-si`) skip installing packages
+<details>
+  <summary>dry-run</summary>
+  <p>
+    `--dry-run` (alias: `-d`) _default value: false_
+  </p>
+  <p>
+    Run through without making any changes.
+  </p>
+</details>
 
-`--skip-git` (`-sg`) skip initializing a git repository
+<details>
+  <summary>inline-style</summary>
+  <p>
+    `--inline-style` (alias: `-is`) _default value: false_
+  </p>
+  <p>
+    Should have an inline style.
+  </p>
+</details>
 
-`--directory` (`-dir`) the directory name to create the app in
+<details>
+  <summary>inline-template</summary>
+  <p>
+    `--inline-template` (alias: `-it`) _default value: false_
+  </p>
+  <p>
+    Should have an inline template.
+  </p>
+</details>
 
-`--source-dir` (`-sd`) the name of the source directory
+<details>
+  <summary>prefix</summary>
+  <p>
+    `--prefix` (alias: `-p`) _default value: app_
+  </p>
+  <p>
+    The prefix to use for all component selectors.
+  </p>
+</details>
 
-`--style` the style file default extension
+<details>
+  <summary>routing</summary>
+  <p>
+    `--routing` _default value: false_
+  </p>
+  <p>
+    Generate a routing module.
+  </p>
+</details>
 
-`--prefix` (`p`) the prefix to use for all component selectors
+<details>
+  <summary>skip-commit</summary>
+  <p>
+    `--skip-commit` (alias: `-sc`) _default value: false_
+  </p>
+  <p>
+    Skip committing the first commit to git.
+  </p>
+</details>
 
-`--routing` flag to indicate whether to generate a routing module
+<details>
+  <summary>skip-git</summary>
+  <p>
+    `--skip-git` (alias: `-sg`) _default value: false_
+  </p>
+  <p>
+    Skip initializing a git repository.
+  </p>
+</details>
 
-`--inline-style` (`is`) flag to indicate if the app component should have an inline style
+<details>
+  <summary>skip-install</summary>
+  <p>
+    `--skip-install` (alias: `-si`) _default value: false_
+  </p>
+  <p>
+    Skip installing packages.
+  </p>
+</details>
 
-`--inline-template` (`it`) flag to indicate if the app component should have an inline template
+<details>
+  <summary>skip-tests</summary>
+  <p>
+    `--skip-tests` (alias: `-st`) _default value: false_
+  </p>
+  <p>
+    Skip creating spec files.
+  </p>
+</details>
+
+<details>
+  <summary>source-dir</summary>
+  <p>
+    `--source-dir` (alias: `-sd`) _default value: src_
+  </p>
+  <p>
+    The name of the source directory.
+  </p>
+</details>
+
+<details>
+  <summary>style</summary>
+  <p>
+    `--style` _default value: css_
+  </p>
+  <p>
+    The style file default extension.
+  </p>
+</details>
+
+<details>
+  <summary>verbose</summary>
+  <p>
+    `--verbose` (alias: `-v`) _default value: false_
+  </p>
+  <p>
+    Adds more details to output logging.
+  </p>
+</details>

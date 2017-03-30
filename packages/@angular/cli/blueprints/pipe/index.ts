@@ -1,11 +1,11 @@
 import {NodeHost} from '../../lib/ast-tools';
 import {CliConfig} from '../../models/config';
 import {getAppFromConfig} from '../../utilities/app-utils';
+import {dynamicPathParser} from '../../utilities/dynamic-path-parser';
 
 const path = require('path');
 const fs = require('fs');
 const chalk = require('chalk');
-const dynamicPathParser = require('../../utilities/dynamic-path-parser');
 const stringUtils = require('ember-cli-string-utils');
 const astUtils = require('../../utilities/ast-utils');
 const findParentModule = require('../../utilities/find-parent-module').default;
@@ -14,6 +14,7 @@ const getFiles = Blueprint.prototype.files;
 
 export default Blueprint.extend({
   description: '',
+  aliases: ['p'],
 
   availableOptions: [
     {
@@ -65,8 +66,7 @@ export default Blueprint.extend({
       }
     } else {
       try {
-        this.pathToModule = findParentModule
-          (this.project.root, appConfig.root, this.dynamicPath.dir);
+        this.pathToModule = findParentModule(this.project.root, appConfig.root, this.generatePath);
       } catch (e) {
         if (!options.skipImport) {
           throw `Error locating module for declaration\n\t${e}`;

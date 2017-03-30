@@ -6,9 +6,42 @@
 `ng lint` will lint you app code using tslint.
 
 ## Options
+<details>
+  <summary>fix</summary>
+  <p>
+    `--fix` _default value: false_
+  </p>
+  <p>
+    Fixes linting errors (may overwrite linted files).
+  </p>
+</details>
 
-`--fix` will attempt to fix lint errors
+<details>
+  <summary>force</summary>
+  <p>
+    `--force` _default value: false_
+  </p>
+  <p>
+    Succeeds even if there was linting errors.
+  </p>
+</details>
 
-`--force` will always return error code 0 even with lint errors
+<details>
+  <summary>type-check</summary>
+  <p>
+    `--type-check` _default value: false_
+  </p>
+  <p>
+    Controls the type check for linting.
+  </p>
+</details>
 
-`--format` (`-t`) the output formatter to use
+<details>
+  <summary>format</summary>
+  <p>
+    `--format` (alias: `-t`) _default value: prose_
+  </p>
+  <p>
+    Output format (prose, json, stylish, verbose, pmd, msbuild, checkstyle, vso, fileslist).
+  </p>
+</details>

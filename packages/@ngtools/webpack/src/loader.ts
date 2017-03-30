@@ -241,7 +241,10 @@ export function removeModuleIdOnlyForTesting(refactor: TypeScriptFileRefactor) {
 function _removeModuleId(refactor: TypeScriptFileRefactor) {
   const sourceFile = refactor.sourceFile;
 
-  refactor.findAstNodes(sourceFile, ts.SyntaxKind.ObjectLiteralExpression, true)
+  refactor.findAstNodes(sourceFile, ts.SyntaxKind.Decorator, true)
+    .reduce((acc, node) => {
+      return acc.concat(refactor.findAstNodes(node, ts.SyntaxKind.ObjectLiteralExpression, true));
+    }, [])
     // Get all their property assignments.
     .filter((node: ts.ObjectLiteralExpression) => {
       return node.properties.some(prop => {
@@ -254,16 +257,18 @@ function _removeModuleId(refactor: TypeScriptFileRefactor) {
         return prop.kind == ts.SyntaxKind.PropertyAssignment
             && _getContentOfKeyLiteral(sourceFile, prop.name) == 'moduleId';
       })[0];
-      // get the trailing comma
-      const moduleIdCommaProp = moduleIdProp.parent.getChildAt(1).getChildren()[1];
+      // Get the trailing comma.
+      const moduleIdCommaProp = moduleIdProp.parent
+        ? moduleIdProp.parent.getChildAt(1).getChildren()[1] : null;
       refactor.removeNodes(moduleIdProp, moduleIdCommaProp);
     });
 }
 
 function _getResourceRequest(element: ts.Expression, sourceFile: ts.SourceFile) {
   if (element.kind == ts.SyntaxKind.StringLiteral) {
-    // if string, assume relative path unless it start with /
-    return `'${loaderUtils.urlToRequest((element as ts.StringLiteral).text, '')}'`;
+    const url = (element as ts.StringLiteral).text;
+    // If the URL does not start with ./ or ../, prepends ./ to it.
+    return `'${/^\.?\.\//.test(url) ? '' : './'}${url}'`;
   } else {
     // if not string, just use expression directly
     return element.getFullText(sourceFile);
@@ -273,21 +278,7 @@ function _getResourceRequest(element: ts.Expression, sourceFile: ts.SourceFile) 
 function _replaceResources(refactor: TypeScriptFileRefactor): void {
   const sourceFile = refactor.sourceFile;
 
-  // Find all object literals.
-  refactor.findAstNodes(sourceFile, ts.SyntaxKind.ObjectLiteralExpression, true)
-    // Get all their property assignments.
-    .map(node => refactor.findAstNodes(node, ts.SyntaxKind.PropertyAssignment))
-    // Flatten into a single array (from an array of array<property assignments>).
-    .reduce((prev, curr) => curr ? prev.concat(curr) : prev, [])
-    // Remove every property assignment that aren't 'loadChildren'.
-    .filter((node: ts.PropertyAssignment) => {
-      const key = _getContentOfKeyLiteral(sourceFile, node.name);
-      if (!key) {
-        // key is an expression, can't do anything.
-        return false;
-      }
-      return key == 'templateUrl' || key == 'styleUrls';
-    })
+  _getResourceNodes(refactor)
     // Get the full text of the initializer.
     .forEach((node: ts.PropertyAssignment) => {
       const key = _getContentOfKeyLiteral(sourceFile, node.name);
@@ -308,6 +299,58 @@ function _replaceResources(refactor: TypeScriptFileRefactor): void {
         refactor.replaceNode(node, `styles: [require(${initializer.join('), require(')})]`);
       }
     });
+}
+
+
+function _getResourceNodes(refactor: TypeScriptFileRefactor) {
+  const { sourceFile } = refactor;
+
+  // Find all object literals.
+  return refactor.findAstNodes(sourceFile, ts.SyntaxKind.ObjectLiteralExpression, true)
+  // Get all their property assignments.
+    .map(node => refactor.findAstNodes(node, ts.SyntaxKind.PropertyAssignment))
+    // Flatten into a single array (from an array of array<property assignments>).
+    .reduce((prev, curr) => curr ? prev.concat(curr) : prev, [])
+    // Remove every property assignment that aren't 'loadChildren'.
+    .filter((node: ts.PropertyAssignment) => {
+      const key = _getContentOfKeyLiteral(sourceFile, node.name);
+      if (!key) {
+        // key is an expression, can't do anything.
+        return false;
+      }
+      return key == 'templateUrl' || key == 'styleUrls';
+    });
+}
+
+
+function _getResourcesUrls(refactor: TypeScriptFileRefactor): string[] {
+  return _getResourceNodes(refactor)
+    .reduce((acc: string[], node: ts.PropertyAssignment) => {
+      const key = _getContentOfKeyLiteral(refactor.sourceFile, node.name);
+
+      if (key == 'templateUrl') {
+        const url = (node.initializer as ts.StringLiteral).text;
+        if (url) {
+          acc.push(url);
+        }
+      } else if (key == 'styleUrls') {
+        const arr = <ts.ArrayLiteralExpression[]>(
+          refactor.findAstNodes(node, ts.SyntaxKind.ArrayLiteralExpression, false));
+        if (!arr || arr.length == 0 || arr[0].elements.length == 0) {
+          return;
+        }
+
+        arr[0].elements.forEach((element: ts.Expression) => {
+          if (element.kind == ts.SyntaxKind.StringLiteral) {
+            const url = (element as ts.StringLiteral).text;
+            if (url) {
+              acc.push(url);
+            }
+          }
+        });
+      }
+      return acc;
+    }, []);
 }
 
 
@@ -360,6 +403,12 @@ export function ngcLoader(this: LoaderContext & { _compilation: any }) {
           // the next time around if it changes.
           plugin.diagnose(sourceFileName);
         }
+      })
+      .then(() => {
+        // Add resources as dependencies.
+        _getResourcesUrls(refactor).forEach((url: string) => {
+          this.addDependency(path.resolve(path.dirname(sourceFileName), url));
+        });
       })
       .then(() => {
         // Force a few compiler options to make sure we get the result we want.
