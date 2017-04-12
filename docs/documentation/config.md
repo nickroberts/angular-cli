@@ -4,12 +4,13 @@
 
 ## Overview
 `ng get [key]` Get a value from the configuration.
+`[key]` should be in JSON path format. Example: `a[3].foo.bar[2]`.
 
 ## Options
 <details>
   <summary>global</summary>
   <p>
-    `--global` _default value: false_
+    <code>--global</code> <em>default value: false</em>
   </p>
   <p>
     Get the value in the global configuration (in your home directory).
@@ -21,12 +22,13 @@
 
 ## Overview
 `ng set [key]=[value]` Set a value in the configuration.
+`[key]` should be in JSON path format. Example: `a[3].foo.bar[2]`.
 
 ## Options
 <details>
   <summary>global</summary>
   <p>
-    `--global` _default value: false_
+    <code>--global</code> <em>default value: false</em>
   </p>
   <p>
     Get the value in the global configuration (in your home directory).
