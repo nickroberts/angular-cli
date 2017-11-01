@@ -5,8 +5,12 @@ import { oneLine } from 'common-tags';
 
 const Command = require('../ember-cli/lib/models/command');
 
+
 const config = CliConfig.fromProject() || CliConfig.fromGlobal();
-const pollDefault = config.config.defaults && config.config.defaults.poll;
+const buildConfigDefaults = config.getPaths('defaults.build', [
+  'sourcemaps', 'baseHref', 'progress', 'poll', 'deleteOutputPath', 'preserveSymlinks',
+  'showCircularDependencies', 'commonChunk', 'namedChunks'
+]);
 
 // defaults for BuildOptions
 export const baseBuildCommandOptions: any = [
@@ -20,7 +24,7 @@ export const baseBuildCommandOptions: any = [
   {
     name: 'environment',
     type: String,
-    aliases: ['e'] ,
+    aliases: ['e'],
     description: 'Defines the build environment.'
   },
   {
@@ -38,20 +42,28 @@ export const baseBuildCommandOptions: any = [
     name: 'sourcemaps',
     type: Boolean,
     aliases: ['sm', 'sourcemap'],
-    description: 'Output sourcemaps.'
+    description: 'Output sourcemaps.',
+    default: buildConfigDefaults['sourcemaps']
   },
   {
     name: 'vendor-chunk',
     type: Boolean,
-    default: true,
     aliases: ['vc'],
     description: 'Use a separate bundle containing only vendor libraries.'
+  },
+  {
+    name: 'common-chunk',
+    type: Boolean,
+    default: buildConfigDefaults['commonChunk'],
+    aliases: ['cc'],
+    description: 'Use a separate bundle containing code used across multiple bundles.'
   },
   {
     name: 'base-href',
     type: String,
     aliases: ['bh'],
-    description: 'Base url for the application being built.'
+    description: 'Base url for the application being built.',
+    default: buildConfigDefaults['baseHref']
   },
   {
     name: 'deploy-url',
@@ -69,9 +81,9 @@ export const baseBuildCommandOptions: any = [
   {
     name: 'progress',
     type: Boolean,
-    default: true,
     aliases: ['pr'],
-    description: 'Log progress to the console while building.'
+    description: 'Log progress to the console while building.',
+    default: buildConfigDefaults['progress']
   },
   {
     name: 'i18n-file',
@@ -89,6 +101,11 @@ export const baseBuildCommandOptions: any = [
     description: 'Locale to use for i18n.'
   },
   {
+    name: 'missing-translation',
+    type: String,
+    description: 'How to handle missing translations for i18n.'
+  },
+  {
     name: 'extract-css',
     type: Boolean,
     aliases: ['ec'],
@@ -96,7 +113,8 @@ export const baseBuildCommandOptions: any = [
   },
   {
     name: 'watch',
-    type: Boolean, default: false,
+    type: Boolean,
+    default: false,
     aliases: ['w'],
     description: 'Run build when files change.'
   },
@@ -110,14 +128,66 @@ export const baseBuildCommandOptions: any = [
   {
     name: 'poll',
     type: Number,
-    default: pollDefault,
-    description: 'Enable and define the file watching poll time period (milliseconds).'
+    description: 'Enable and define the file watching poll time period (milliseconds).',
+    default: buildConfigDefaults['poll']
   },
   {
     name: 'app',
     type: String,
     aliases: ['a'],
     description: 'Specifies app name or index to use.'
+  },
+  {
+    name: 'delete-output-path',
+    type: Boolean,
+    aliases: ['dop'],
+    description: 'Delete output path before build.',
+    default: buildConfigDefaults['deleteOutputPath'],
+  },
+  {
+    name: 'preserve-symlinks',
+    type: Boolean,
+    description: 'Do not use the real path when resolving modules.',
+    default: buildConfigDefaults['preserveSymlinks']
+  },
+  {
+    name: 'extract-licenses',
+    type: Boolean,
+    default: true,
+    description: 'Extract all licenses in a separate file, in the case of production builds only.'
+  },
+  {
+    name: 'show-circular-dependencies',
+    type: Boolean,
+    aliases: ['scd'],
+    description: 'Show circular dependency warnings on builds.',
+    default: buildConfigDefaults['showCircularDependencies']
+  },
+  {
+    name: 'build-optimizer',
+    type: Boolean,
+    description: 'Enables @angular-devkit/build-optimizer optimizations when using `--aot`.'
+  },
+  {
+    name: 'named-chunks',
+    type: Boolean,
+    aliases: ['nc'],
+    description: 'Use file name for lazy loaded chunks.',
+    default: buildConfigDefaults['namedChunks']
+  },
+  {
+    name: 'subresource-integrity',
+    type: Boolean,
+    default: false,
+    aliases: ['sri'],
+    description: 'Enables the use of subresource integrity validation.'
+  },
+  {
+    name: 'bundle-dependencies',
+    type: ['none', 'all'],
+    default: 'none',
+    description: 'Available on server platform only. Which external dependencies to bundle into '
+               + 'the module. By default, all of node_modules will be kept as requires.'
   }
 ];
 
@@ -132,24 +202,28 @@ const BuildCommand = Command.extend({
 
   availableOptions: baseBuildCommandOptions.concat([
     {
-       name: 'stats-json',
-       type: Boolean,
-       default: false,
-       description: oneLine`Generates a \`stats.json\` file which can be analyzed using tools
+      name: 'stats-json',
+      type: Boolean,
+      default: false,
+      description: oneLine`Generates a \`stats.json\` file which can be analyzed using tools
        such as: \`webpack-bundle-analyzer\` or https://webpack.github.io/analyse.`
-      }
+    }
   ]),
 
   run: function (commandOptions: BuildTaskOptions) {
-    const project = this.project;
+    // Check Angular and TypeScript versions.
+    Version.assertAngularVersionIs2_3_1OrHigher(this.project.root);
+    Version.assertTypescriptVersion(this.project.root);
 
-    // Check angular version.
-    Version.assertAngularVersionIs2_3_1OrHigher(project.root);
+    // Force commonjs module format for TS on dev watch builds.
+    if (commandOptions.target === 'development' && commandOptions.watch === true) {
+      commandOptions.forceTsCommonjs = true;
+    }
 
     const BuildTask = require('../tasks/build').default;
 
     const buildTask = new BuildTask({
-      cliProject: project,
+      project: this.project,
       ui: this.ui,
     });
 

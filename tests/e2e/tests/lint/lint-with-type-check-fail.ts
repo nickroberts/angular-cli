@@ -1,8 +1,14 @@
 import { ng } from '../../utils/process';
 import { expectToFail } from '../../utils/utils';
 import { writeFile } from '../../utils/fs';
+import { getGlobalVariable } from '../../utils/env';
 
 export default function () {
+  // Skip this in Appveyor tests.
+  if (getGlobalVariable('argv').appveyor) {
+    return Promise.resolve();
+  }
+
   const fileName = 'src/app/foo.ts';
   const fileContents = `
 const ANIMATION_CSS_VALUE_REGEX = 'asda';
@@ -18,8 +24,8 @@ const c = {
 
 function check(val: any, fxState: any) {
   if (typeof val === "string" && val.indexOf(" ") < 0) {
-    let r = val.match(ANIMATION_CSS_VALUE_REGEX);
-    let num = parseFloat(r[1]);
+    var r = val.match(ANIMATION_CSS_VALUE_REGEX);
+    var num = parseFloat(r[1]);
 
     if (!isNaN(num)) {
       fxState.num = num + "";

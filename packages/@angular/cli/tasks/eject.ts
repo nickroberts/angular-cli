@@ -1,14 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as ts from 'typescript';
 import * as webpack from 'webpack';
+import chalk from 'chalk';
 
 import { getAppFromConfig } from '../utilities/app-utils';
 import { EjectTaskOptions } from '../commands/eject';
 import { NgCliWebpackConfig } from '../models/webpack-config';
 import { CliConfig } from '../models/config';
-import { AotPlugin } from '@ngtools/webpack';
-import { yellow } from 'chalk';
+import { stripBom } from '../utilities/strip-bom';
+import { AotPlugin, AngularCompilerPlugin } from '@ngtools/webpack';
+import { LicenseWebpackPlugin } from 'license-webpack-plugin';
 
 import denodeify = require('denodeify');
 import {oneLine, stripIndent} from 'common-tags';
@@ -20,7 +21,11 @@ const angularCliPlugins = require('../plugins/webpack');
 
 const ExtractTextPlugin = require('extract-text-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const SubresourceIntegrityPlugin = require('webpack-subresource-integrity');
 const SilentError = require('silent-error');
+const CircularDependencyPlugin = require('circular-dependency-plugin');
+const ConcatPlugin = require('webpack-concat-plugin');
+const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
 const Task = require('../ember-cli/lib/models/task');
 
 const ProgressPlugin = require('webpack/lib/ProgressPlugin');
@@ -29,21 +34,26 @@ const ProgressPlugin = require('webpack/lib/ProgressPlugin');
 export const pluginArgs = Symbol('plugin-args');
 export const postcssArgs = Symbol('postcss-args');
 
+const yellow = chalk.yellow;
 const pree2eNpmScript = `webdriver-manager update --standalone false --gecko false --quiet`;
 
 
 class JsonWebpackSerializer {
   public imports: {[name: string]: string[]} = {};
   public variableImports: {[name: string]: string} = {
-    'path': 'path'
+    'fs': 'fs',
+    'path': 'path',
   };
   public variables: {[name: string]: string} = {
     'nodeModules': `path.join(process.cwd(), 'node_modules')`,
+    'realNodeModules': `fs.realpathSync(nodeModules)`,
+    'genDirNodeModules':
+      `path.join(process.cwd(), '${this._appRoot}', '$$_gendir', 'node_modules')`,
   };
   private _postcssProcessed = false;
 
 
-  constructor(private _root: string, private _dist: string) {}
+  constructor(private _root: string, private _dist: string, private _appRoot: string) {}
 
   private _escape(str: string) {
     return '\uFF01' + str + '\uFF01';
@@ -68,6 +78,19 @@ class JsonWebpackSerializer {
     if (this.imports[module].indexOf(importName) == -1) {
       this.imports[module].push(importName);
     }
+  }
+
+  private _globCopyWebpackPluginSerialize(value: any): any {
+    let patterns = value.options.patterns;
+    let globOptions = value.options.globOptions;
+    return {
+      patterns,
+      globOptions: this._globReplacer(globOptions)
+    };
+  }
+
+  private _insertConcatAssetsWebpackPluginSerialize(value: any): any {
+    return value.entryNames;
   }
 
   private _commonsChunkPluginSerialize(value: any): any {
@@ -100,7 +123,7 @@ class JsonWebpackSerializer {
     const basePath = path.dirname(tsConfigPath);
     return Object.assign({}, value.options, {
       tsConfigPath,
-      mainPath: path.relative(value.basePath, value.options.mainPath),
+      mainPath: path.relative(basePath, value.options.mainPath),
       hostReplacementPaths: Object.keys(value.options.hostReplacementPaths)
         .reduce((acc: any, key: string) => {
           const replacementPath = value.options.hostReplacementPaths[key];
@@ -110,7 +133,7 @@ class JsonWebpackSerializer {
         }, {}),
       exclude: Array.isArray(value.options.exclude)
         ? value.options.exclude.map((p: any) => {
-          return p.startsWith('/') ? path.relative(value.basePath, p) : p;
+          return p.startsWith('/') ? path.relative(basePath, p) : p;
         })
         : value.options.exclude
     });
@@ -126,13 +149,34 @@ class JsonWebpackSerializer {
     });
   }
 
-  _definePlugin(plugin: any) {
-    return plugin.definitions;
+  _environmentPlugin(plugin: any) {
+    return plugin.defaultValues;
+  }
+
+  private _licenseWebpackPlugin(plugin: any) {
+    return plugin.options;
+  }
+
+  private _concatPlugin(plugin: any) {
+    const options = plugin.settings;
+    if (!options || !options.filesToConcat) {
+      return options;
+    }
+
+    const filesToConcat = options.filesToConcat
+      .map((file: string) => path.relative(process.cwd(), file));
+
+    return { ...options, filesToConcat };
+  }
+
+  private _uglifyjsPlugin(plugin: any) {
+    return plugin.options;
   }
 
   private _pluginsReplacer(plugins: any[]) {
     return plugins.map(plugin => {
       let args = plugin.options || undefined;
+      const serializer = (args: any) => JSON.stringify(args, (k, v) => this._replacer(k, v), 2);
 
       switch (plugin.constructor) {
         case ProgressPlugin:
@@ -141,18 +185,34 @@ class JsonWebpackSerializer {
         case webpack.NoEmitOnErrorsPlugin:
           this._addImport('webpack', 'NoEmitOnErrorsPlugin');
           break;
+        case webpack.NamedModulesPlugin:
+          this._addImport('webpack', 'NamedModulesPlugin');
+          break;
         case (<any>webpack).HashedModuleIdsPlugin:
           this._addImport('webpack', 'HashedModuleIdsPlugin');
+          break;
+        case webpack.SourceMapDevToolPlugin:
+          this._addImport('webpack', 'SourceMapDevToolPlugin');
           break;
         case webpack.optimize.UglifyJsPlugin:
           this._addImport('webpack.optimize', 'UglifyJsPlugin');
           break;
+        case (webpack.optimize as any).ModuleConcatenationPlugin:
+          this._addImport('webpack.optimize', 'ModuleConcatenationPlugin');
+          break;
         case angularCliPlugins.BaseHrefWebpackPlugin:
-        case angularCliPlugins.GlobCopyWebpackPlugin:
+        case angularCliPlugins.NamedLazyChunksWebpackPlugin:
         case angularCliPlugins.SuppressExtractedTextChunksWebpackPlugin:
           this._addImport('@angular/cli/plugins/webpack', plugin.constructor.name);
           break;
-
+        case angularCliPlugins.GlobCopyWebpackPlugin:
+          args = this._globCopyWebpackPluginSerialize(plugin);
+          this._addImport('@angular/cli/plugins/webpack', 'GlobCopyWebpackPlugin');
+          break;
+        case angularCliPlugins.InsertConcatAssetsWebpackPlugin:
+          args = this._insertConcatAssetsWebpackPluginSerialize(plugin);
+          this._addImport('@angular/cli/plugins/webpack', 'InsertConcatAssetsWebpackPlugin');
+          break;
         case webpack.optimize.CommonsChunkPlugin:
           args = this._commonsChunkPluginSerialize(plugin);
           this._addImport('webpack.optimize', 'CommonsChunkPlugin');
@@ -161,28 +221,62 @@ class JsonWebpackSerializer {
           args = this._extractTextPluginSerialize(plugin);
           this.variableImports['extract-text-webpack-plugin'] = 'ExtractTextPlugin';
           break;
+        case CircularDependencyPlugin:
+          this.variableImports['circular-dependency-plugin'] = 'CircularDependencyPlugin';
+          break;
         case AotPlugin:
           args = this._aotPluginSerialize(plugin);
           this._addImport('@ngtools/webpack', 'AotPlugin');
+          break;
+        case AngularCompilerPlugin:
+          args = this._aotPluginSerialize(plugin);
+          this._addImport('@ngtools/webpack', 'AngularCompilerPlugin');
           break;
         case HtmlWebpackPlugin:
           args = this._htmlWebpackPlugin(plugin);
           this.variableImports['html-webpack-plugin'] = 'HtmlWebpackPlugin';
           break;
-        case webpack.DefinePlugin:
-          args = this._definePlugin(plugin);
-          this._addImport('webpack', 'DefinePlugin');
+        case webpack.EnvironmentPlugin:
+          args = this._environmentPlugin(plugin);
+          this._addImport('webpack', 'EnvironmentPlugin');
+          break;
+        case LicenseWebpackPlugin:
+          args = this._licenseWebpackPlugin(plugin);
+          this._addImport('license-webpack-plugin', 'LicenseWebpackPlugin');
+          break;
+        case ConcatPlugin:
+          args = this._concatPlugin(plugin);
+          this.variableImports['webpack-concat-plugin'] = 'ConcatPlugin';
+          break;
+        case UglifyJSPlugin:
+          args = this._uglifyjsPlugin(plugin);
+          this.variableImports['uglifyjs-webpack-plugin'] = 'UglifyJsPlugin';
+          break;
+        case SubresourceIntegrityPlugin:
+          this.variableImports['webpack-subresource-integrity'] = 'SubresourceIntegrityPlugin';
           break;
 
         default:
           if (plugin.constructor.name == 'AngularServiceWorkerPlugin') {
             this._addImport('@angular/service-worker/build/webpack', plugin.constructor.name);
+          } else if (plugin['copyWebpackPluginPatterns']) {
+            // CopyWebpackPlugin doesn't have a constructor nor save args.
+            this.variableImports['copy-webpack-plugin'] = 'CopyWebpackPlugin';
+            const patternOptions = plugin['copyWebpackPluginPatterns'].map((pattern: any) => {
+              if (!pattern.context) {
+                return pattern;
+              }
+              const context = path.relative(process.cwd(), pattern.context);
+              return { ...pattern, context };
+            });
+            const patternsSerialized = serializer(patternOptions);
+            const optionsSerialized = serializer(plugin['copyWebpackPluginOptions']) || 'undefined';
+            return `\uFF02CopyWebpackPlugin(${patternsSerialized}, ${optionsSerialized})\uFF02`;
           }
           break;
-
       }
 
-      const argsSerialized = JSON.stringify(args, (k, v) => this._replacer(k, v), 2) || '';
+      const argsSerialized = serializer(args) || '';
       return `\uFF02${plugin.constructor.name}(${argsSerialized})\uFF02`;
     });
   }
@@ -250,7 +344,7 @@ class JsonWebpackSerializer {
         return v;
       } else if (typeof v == 'string') {
         if (v === path.join(this._root, 'node_modules')) {
-          return this._serializeRegExp(/\/node_modules\//);
+          return this._serializeRegExp(/(\\|\/)node_modules(\\|\/)/);
         }
         return this._relativePath('process.cwd()', path.relative(this._root, v));
       } else {
@@ -300,6 +394,12 @@ class JsonWebpackSerializer {
   private _moduleReplacer(value: any) {
     return Object.assign({}, value, {
       rules: value.rules && value.rules.map((x: any) => this._ruleReplacer(x))
+    });
+  }
+
+  private _globReplacer(value: any) {
+    return Object.assign({}, value, {
+      cwd: this._relativePath('process.cwd()', path.relative(this._root, value.cwd))
     });
   }
 
@@ -381,7 +481,7 @@ class JsonWebpackSerializer {
 
 export default Task.extend({
   run: function (runTaskOptions: EjectTaskOptions) {
-    const project = this.cliProject;
+    const project = this.project;
     const cliConfig = CliConfig.fromProject();
     const config = cliConfig.config;
     const appConfig = getAppFromConfig(runTaskOptions.app);
@@ -390,12 +490,15 @@ export default Task.extend({
     const outputPath = runTaskOptions.outputPath || appConfig.outDir;
     const force = runTaskOptions.force;
 
-    if (project.root === outputPath) {
+    if (project.root === path.resolve(outputPath)) {
       throw new SilentError ('Output path MUST not be project root directory!');
+    }
+    if (appConfig.platform === 'server') {
+      throw new SilentError('ng eject for platform server applications is coming soon!');
     }
 
     const webpackConfig = new NgCliWebpackConfig(runTaskOptions, appConfig).buildConfig();
-    const serializer = new JsonWebpackSerializer(process.cwd(), outputPath);
+    const serializer = new JsonWebpackSerializer(process.cwd(), outputPath, appConfig.root);
     const output = serializer.serialize(webpackConfig);
     const webpackConfigStr = `${serializer.generateVariables()}\n\nmodule.exports = ${output};\n`;
 
@@ -408,7 +511,7 @@ export default Task.extend({
       })
       // Read the package.json and update it to include npm scripts. We do this first so that if
       // an error already exists
-      .then(() => ts.sys.readFile('package.json'))
+      .then(() => stripBom(fs.readFileSync('package.json', 'utf-8')))
       .then((packageJson: string) => JSON.parse(packageJson))
       .then((packageJson: any) => {
         const scripts = packageJson['scripts'];
@@ -420,12 +523,6 @@ export default Task.extend({
         if (scripts['start'] && scripts['start'] !== 'ng serve' && !force) {
           throw new SilentError(oneLine`
             Your package.json scripts must not contain a start script as it will be overwritten.
-          `);
-        }
-        if (scripts['pree2e'] && scripts['prepree2e'] !== 'npm start' && !force) {
-          throw new SilentError(oneLine`
-            Your package.json scripts needs to not contain a prepree2e script as it will be
-            overwritten.
           `);
         }
         if (scripts['pree2e'] && scripts['pree2e'] !== pree2eNpmScript && !force) {
@@ -448,7 +545,6 @@ export default Task.extend({
         packageJson['scripts']['build'] = 'webpack';
         packageJson['scripts']['start'] = 'webpack-dev-server --port=4200';
         packageJson['scripts']['test'] = 'karma start ./karma.conf.js';
-        packageJson['scripts']['prepree2e'] = 'npm start';
         packageJson['scripts']['pree2e'] = pree2eNpmScript;
         packageJson['scripts']['e2e'] = 'protractor ./protractor.conf.js';
 
@@ -462,11 +558,13 @@ export default Task.extend({
 
         // Update all loaders from webpack, plus postcss plugins.
         [
+          'webpack',
           'autoprefixer',
           'css-loader',
           'cssnano',
           'exports-loader',
           'file-loader',
+          'html-webpack-plugin',
           'json-loader',
           'karma-sourcemap-loader',
           'less-loader',
@@ -474,19 +572,22 @@ export default Task.extend({
           'postcss-url',
           'raw-loader',
           'sass-loader',
-          'script-loader',
           'source-map-loader',
           'istanbul-instrumenter-loader',
           'style-loader',
           'stylus-loader',
           'url-loader',
+          'circular-dependency-plugin',
+          'webpack-concat-plugin',
+          'copy-webpack-plugin',
+          'uglifyjs-webpack-plugin',
         ].forEach((packageName: string) => {
           packageJson['devDependencies'][packageName] = ourPackageJson['dependencies'][packageName];
         });
 
         return writeFile('package.json', JSON.stringify(packageJson, null, 2) + '\n');
       })
-      .then(() => JSON.parse(ts.sys.readFile(tsConfigPath)))
+      .then(() => JSON.parse(stripBom(fs.readFileSync(tsConfigPath, 'utf-8'))))
       .then((tsConfigJson: any) => {
         if (!tsConfigJson.exclude || force) {
           // Make sure we now include tests.  Do not touch otherwise.
@@ -511,7 +612,7 @@ export default Task.extend({
 
           To run your builds, you now need to do the following commands:
              - "npm run build" to build.
-             - "npm run test" to run unit tests.
+             - "npm test" to run unit tests.
              - "npm start" to serve the app using webpack-dev-server.
              - "npm run e2e" to run protractor.
 

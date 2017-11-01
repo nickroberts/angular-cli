@@ -26,6 +26,14 @@ export default function () {
       './src/output-asset.txt': 'output-asset.txt',
       './node_modules/some-package/node_modules-asset.txt': 'node_modules-asset.txt',
     }))
+    // Add invalid asset config in .angular-cli.json.
+    .then(() => updateJsonFile('.angular-cli.json', configJson => {
+      const app = configJson['apps'][0];
+      app['assets'] = [
+        { 'glob': '**/*', 'input': '../node_modules/some-package/', 'output': '../package-folder' }
+      ];
+    }))
+    .then(() => expectToFail(() => ng('build')))
     // Add asset config in .angular-cli.json.
     .then(() => updateJsonFile('.angular-cli.json', configJson => {
       const app = configJson['apps'][0];
@@ -49,6 +57,27 @@ export default function () {
     .then(() => expectToFail(() => expectFileToExist('dist/assets/.gitkeep')))
     // Update app to test assets are present.
     .then(_ => !ejected && writeMultipleFiles({
+      'src/app/app.module.ts': `
+        import { BrowserModule } from '@angular/platform-browser';
+        import { NgModule } from '@angular/core';
+        import { FormsModule } from '@angular/forms';
+        import { HttpModule } from '@angular/http';
+        import { AppComponent } from './app.component';
+
+        @NgModule({
+          declarations: [
+            AppComponent
+          ],
+          imports: [
+            BrowserModule,
+            FormsModule,
+            HttpModule
+          ],
+          providers: [],
+          bootstrap: [AppComponent]
+        })
+        export class AppModule { }
+      `,
       'src/app/app.component.ts': `
         import { Component } from '@angular/core';
         import { Http, Response } from '@angular/http';
@@ -112,5 +141,5 @@ export default function () {
         });`,
     }))
     .then(() => !ejected && ng('test', '--single-run'))
-    .then(() => !ejected && ng('e2e', '--no-progress'));
+    .then(() => !ejected && ng('e2e'));
 }

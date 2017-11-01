@@ -1,11 +1,17 @@
 import * as webpack from 'webpack';
 import * as path from 'path';
-import { GlobCopyWebpackPlugin } from '../../plugins/glob-copy-webpack-plugin';
-import { extraEntryParser, getOutputHashFormat } from './utils';
+import * as CopyWebpackPlugin from 'copy-webpack-plugin';
+import { NamedLazyChunksWebpackPlugin } from '../../plugins/named-lazy-chunks-webpack-plugin';
+import { InsertConcatAssetsWebpackPlugin } from '../../plugins/insert-concat-assets-webpack-plugin';
+import { extraEntryParser, getOutputHashFormat, AssetPattern } from './utils';
+import { isDirectory } from '../../utilities/is-directory';
+import { requireProjectModule } from '../../utilities/require-project-module';
 import { WebpackConfigOptions } from '../webpack-config';
 
+const ConcatPlugin = require('webpack-concat-plugin');
 const ProgressPlugin = require('webpack/lib/ProgressPlugin');
-
+const CircularDependencyPlugin = require('circular-dependency-plugin');
+const SilentError = require('silent-error');
 
 /**
  * Enumerate loaders and their dependencies from this file to let the dependency validator
@@ -13,10 +19,9 @@ const ProgressPlugin = require('webpack/lib/ProgressPlugin');
  *
  * require('source-map-loader')
  * require('raw-loader')
- * require('script-loader')
- * require('json-loader')
  * require('url-loader')
  * require('file-loader')
+ * require('@angular-devkit/build-optimizer')
  */
 
 export function getCommonConfig(wco: WebpackConfigOptions) {
@@ -24,6 +29,8 @@ export function getCommonConfig(wco: WebpackConfigOptions) {
 
   const appRoot = path.resolve(projectRoot, appConfig.root);
   const nodeModules = path.resolve(projectRoot, 'node_modules');
+
+  const projectTs = requireProjectModule(projectRoot, 'typescript');
 
   let extraPlugins: any[] = [];
   let extraRules: any[] = [];
@@ -43,68 +50,174 @@ export function getCommonConfig(wco: WebpackConfigOptions) {
   // process global scripts
   if (appConfig.scripts.length > 0) {
     const globalScripts = extraEntryParser(appConfig.scripts, appRoot, 'scripts');
+    const globalScriptsByEntry = globalScripts
+      .reduce((prev: { entry: string, paths: string[], lazy: boolean }[], curr) => {
 
-    // add entry points and lazy chunks
-    globalScripts.forEach(script => {
-      let scriptPath = `script-loader!${script.path}`;
-      entryPoints[script.entry] = (entryPoints[script.entry] || []).concat(scriptPath);
+        let existingEntry = prev.find((el) => el.entry === curr.entry);
+        if (existingEntry) {
+          existingEntry.paths.push(curr.path);
+          // All entries have to be lazy for the bundle to be lazy.
+          existingEntry.lazy = existingEntry.lazy && curr.lazy;
+        } else {
+          prev.push({ entry: curr.entry, paths: [curr.path], lazy: curr.lazy });
+        }
+        return prev;
+      }, []);
+
+
+    // Add a new asset for each entry.
+    globalScriptsByEntry.forEach((script) => {
+      const hash = hashFormat.chunk !== '' && !script.lazy ? '.[hash]' : '';
+      extraPlugins.push(new ConcatPlugin({
+        uglify: buildOptions.target === 'production' ? { sourceMapIncludeSources: true } : false,
+        sourceMap: buildOptions.sourcemaps,
+        name: script.entry,
+        // Lazy scripts don't get a hash, otherwise they can't be loaded by name.
+        fileName: `[name]${script.lazy ? '' : hash}.bundle.js`,
+        filesToConcat: script.paths
+      }));
     });
+
+    // Insert all the assets created by ConcatPlugin in the right place in index.html.
+    extraPlugins.push(new InsertConcatAssetsWebpackPlugin(
+      globalScriptsByEntry
+        .filter((el) => !el.lazy)
+        .map((el) => el.entry)
+    ));
   }
 
   // process asset entries
   if (appConfig.assets) {
-    extraPlugins.push(new GlobCopyWebpackPlugin({
-      patterns: appConfig.assets,
-      globOptions: { cwd: appRoot, dot: true, ignore: '**/.gitkeep' }
-    }));
+    const copyWebpackPluginPatterns = appConfig.assets.map((asset: string | AssetPattern) => {
+      // Convert all string assets to object notation.
+      asset = typeof asset === 'string' ? { glob: asset } : asset;
+      // Add defaults.
+      // Input is always resolved relative to the appRoot.
+      asset.input = path.resolve(appRoot, asset.input || '');
+      asset.output = asset.output || '';
+      asset.glob = asset.glob || '';
+
+      // Prevent asset configurations from writing outside of the output path
+      const fullOutputPath = path.resolve(buildOptions.outputPath, asset.output);
+      if (!fullOutputPath.startsWith(path.resolve(buildOptions.outputPath))) {
+        const message = 'An asset cannot be written to a location outside of the output path.';
+        throw new SilentError(message);
+      }
+
+      // Ensure trailing slash.
+      if (isDirectory(path.resolve(asset.input))) {
+        asset.input += '/';
+      }
+
+      // Convert dir patterns to globs.
+      if (isDirectory(path.resolve(asset.input, asset.glob))) {
+        asset.glob = asset.glob + '/**/*';
+      }
+
+      return {
+        context: asset.input,
+        to: asset.output,
+        from: {
+          glob: asset.glob,
+          dot: true
+        }
+      };
+    });
+    const copyWebpackPluginOptions = { ignore: ['.gitkeep'] };
+
+    const copyWebpackPluginInstance = new CopyWebpackPlugin(copyWebpackPluginPatterns,
+      copyWebpackPluginOptions);
+
+    // Save options so we can use them in eject.
+    (copyWebpackPluginInstance as any)['copyWebpackPluginPatterns'] = copyWebpackPluginPatterns;
+    (copyWebpackPluginInstance as any)['copyWebpackPluginOptions'] = copyWebpackPluginOptions;
+
+    extraPlugins.push(copyWebpackPluginInstance);
   }
 
   if (buildOptions.progress) {
     extraPlugins.push(new ProgressPlugin({ profile: buildOptions.verbose, colors: true }));
   }
 
+  if (buildOptions.showCircularDependencies) {
+    extraPlugins.push(new CircularDependencyPlugin({
+      exclude: /(\\|\/)node_modules(\\|\/)/
+    }));
+  }
+
+  if (buildOptions.buildOptimizer) {
+    extraRules.push({
+      test: /\.js$/,
+      use: [{
+        loader: '@angular-devkit/build-optimizer/webpack-loader',
+        options: { sourceMap: buildOptions.sourcemaps }
+      }]
+    });
+  }
+
+  if (buildOptions.namedChunks) {
+    extraPlugins.push(new NamedLazyChunksWebpackPlugin());
+  }
+
+  // Read the tsconfig to determine if we should prefer ES2015 modules.
+
+  // Load rxjs path aliases.
+  // https://github.com/ReactiveX/rxjs/blob/master/doc/lettable-operators.md#build-and-treeshaking
+
+  const supportES2015 =
+    wco.tsConfig.options.target !== projectTs.ScriptTarget.ES3 &&
+    wco.tsConfig.options.target !== projectTs.ScriptTarget.ES5;
+
+  let alias = {};
+  try {
+    const rxjsPathMappingImport = supportES2015
+      ? 'rxjs/_esm2015/path-mapping'
+      : 'rxjs/_esm5/path-mapping';
+    const rxPaths = requireProjectModule(projectRoot, rxjsPathMappingImport);
+    alias = rxPaths(nodeModules);
+  } catch (e) { }
+
   return {
-    devtool: buildOptions.sourcemaps ? 'source-map' : false,
     resolve: {
       extensions: ['.ts', '.js'],
-      modules: [nodeModules],
+      modules: ['node_modules', nodeModules],
+      symlinks: !buildOptions.preserveSymlinks,
+      alias
     },
     resolveLoader: {
-      modules: [nodeModules]
+      modules: [nodeModules, 'node_modules']
     },
-    context: projectRoot,
+    context: __dirname,
     entry: entryPoints,
     output: {
-      path: path.resolve(projectRoot, buildOptions.outputPath),
+      path: path.resolve(buildOptions.outputPath),
       publicPath: buildOptions.deployUrl,
       filename: `[name]${hashFormat.chunk}.bundle.js`,
       chunkFilename: `[id]${hashFormat.chunk}.chunk.js`
     },
     module: {
       rules: [
-        { enforce: 'pre', test: /\.js$/, loader: 'source-map-loader', exclude: [nodeModules] },
-        { test: /\.json$/, loader: 'json-loader' },
         { test: /\.html$/, loader: 'raw-loader' },
-        { test: /\.(eot|svg)$/, loader: `file-loader?name=[name]${hashFormat.file}.[ext]` },
         {
-          test: /\.(jpg|png|gif|otf|ttf|woff|woff2|cur|ani)$/,
-          loader: `url-loader?name=[name]${hashFormat.file}.[ext]&limit=10000`
+          test: /\.(eot|svg|cur)$/,
+          loader: 'file-loader',
+          options: {
+            name: `[name]${hashFormat.file}.[ext]`,
+            limit: 10000
+          }
+        },
+        {
+          test: /\.(jpg|png|webp|gif|otf|ttf|woff|woff2|ani)$/,
+          loader: 'url-loader',
+          options: {
+            name: `[name]${hashFormat.file}.[ext]`,
+            limit: 10000
+          }
         }
       ].concat(extraRules)
     },
     plugins: [
       new webpack.NoEmitOnErrorsPlugin()
-    ].concat(extraPlugins),
-    node: {
-      fs: 'empty',
-      global: true,
-      crypto: 'empty',
-      tls: 'empty',
-      net: 'empty',
-      process: true,
-      module: false,
-      clearImmediate: false,
-      setImmediate: false
-    }
+    ].concat(extraPlugins)
   };
 }

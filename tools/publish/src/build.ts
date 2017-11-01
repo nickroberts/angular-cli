@@ -1,12 +1,12 @@
 import {Logger} from '@ngtools/logger';
-import * as fs from 'fs';
+import * as fs from 'fs-extra';
 import * as path from 'path';
 import {buildSchema} from './build-schema';
 
 const denodeify = require('denodeify');
 const glob = denodeify(require('glob'));
+const tar = require('tar');
 const npmRun = require('npm-run');
-const rimraf = denodeify(require('rimraf'));
 
 
 const root = path.join(__dirname, '../../..');
@@ -32,7 +32,7 @@ function copy(from: string, to: string): Promise<void> {
 
 
 function rm(p: string): Promise<void> {
-  path.relative(process.cwd(), p);
+  p = path.relative(process.cwd(), p);
   return new Promise<void>((resolve, reject) => {
     fs.unlink(p, err => {
       if (err) {
@@ -45,13 +45,20 @@ function rm(p: string): Promise<void> {
 }
 
 
+function tarFiles(out: string, dir: string): Promise<void> {
+  // const files = fs.readdirSync(dir);
+  return tar.create({ gzip: true, strict: true, portable: true, cwd: dir, file: out }, ['.']);
+}
+
+
 function getDeps(pkg: any): any {
   const packageJson = require(pkg.packageJson);
   return Object.assign({}, packageJson['dependencies'], packageJson['devDependencies']);
 }
 
 
-export default function build(packagesToBuild: string[], _opts: any,
+export default function build(packagesToBuild: string[],
+                              opts: { local: boolean, devkit: string },
                               logger: Logger): Promise<void> {
   const { packages, tools } = require('../../../lib/packages');
 
@@ -65,14 +72,14 @@ export default function build(packagesToBuild: string[], _opts: any,
     .then(() => logger.info('Deleting dist folder...'))
     .then(() => {
       if (willBuildEverything) {
-        return rimraf(dist);
+        return fs.remove(dist);
       }
     })
     .then(() => logger.info('Creating schema.d.ts...'))
     .then(() => {
       const input = path.join(root, 'packages/@angular/cli/lib/config/schema.json');
       const output = path.join(root, 'packages/@angular/cli/lib/config/schema.d.ts');
-      fs.writeFileSync(output, buildSchema(input, logger), 'utf-8');
+      fs.writeFileSync(output, buildSchema(input, logger), { encoding: 'utf-8' });
     })
     .then(() => logger.info('Compiling packages...'))
     .then(() => {
@@ -204,7 +211,7 @@ export default function build(packagesToBuild: string[], _opts: any,
     })
     .then(() => {
       // Copy all resources that might have been missed.
-      const extraFiles = ['CHANGELOG.md', 'CONTRIBUTING.md', 'README.md'];
+      const extraFiles = ['CONTRIBUTING.md', 'README.md'];
       return Promise.all(extraFiles.map(fileName => {
         logger.info(`Copying ${fileName}...`);
         return copy(fileName, path.join('dist/@angular/cli', fileName));
@@ -217,8 +224,64 @@ export default function build(packagesToBuild: string[], _opts: any,
       const licenseLogger = new Logger('license', logger);
       return Promise.all(Object.keys(packages).map(pkgName => {
         const pkg = packages[pkgName];
-        licenseLogger.info(`${pkgName}`);
+        licenseLogger.info(pkgName);
         return copy('LICENSE', path.join(pkg.dist, 'LICENSE'));
+      }));
+    })
+    .then(() => {
+      if (!opts.local) {
+        return;
+      }
+
+      logger.info('Changing dependencies between packages to tar files...');
+      logger.warn('=================================================');
+      logger.warn('= THIS SHOULD NOT BE USED FOR PUBLISHING TO NPM =');
+      logger.warn('=================================================');
+
+      Object.keys(packages).forEach(pkgName => {
+        const pkg = packages[pkgName];
+        const json = JSON.parse(fs.readFileSync(pkg.packageJson).toString());
+
+        if (!json['dependencies']) {
+          json['dependencies'] = {};
+        }
+        if (!json['devDependencies']) {
+          json['devDependencies'] = {};
+        }
+
+        for (const packageName of Object.keys(packages)) {
+          if (json['dependencies'].hasOwnProperty(packageName)) {
+            json['dependencies'][packageName] = packages[packageName].tar;
+          } else if (json['devDependencies'].hasOwnProperty(packageName)) {
+            json['devDependencies'][packageName] = packages[packageName].tar;
+          }
+        }
+
+        if (opts.devkit) {
+          // Load the packages info for devkit.
+          const devkitPackages = require(opts.devkit + '/lib/packages').packages;
+
+          for (const packageName of Object.keys(devkitPackages)) {
+            console.log(pkgName, packageName);
+            if (json['dependencies'].hasOwnProperty(packageName)) {
+              json['dependencies'][packageName] = devkitPackages[packageName].tar;
+            } else if (json['devDependencies'].hasOwnProperty(packageName)) {
+              json['devDependencies'][packageName] = devkitPackages[packageName].tar;
+            }
+          }
+        }
+
+        fs.writeFileSync(pkg.distPackageJson, JSON.stringify(json, null, 2));
+      });
+    })
+    .then(() => {
+      logger.info('Tarring all packages...');
+
+      const tarLogger = new Logger('license', logger);
+      return Promise.all(Object.keys(packages).map(pkgName => {
+        const pkg = packages[pkgName];
+        tarLogger.info(`${pkgName} => ${pkg.tar}`);
+        return tarFiles(pkg.tar, pkg.dist);
       }));
     })
     .then(() => process.exit(0), (err) => {

@@ -1,6 +1,6 @@
 const Command = require('../ember-cli/lib/models/command');
 const stringUtils = require('ember-cli-string-utils');
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 
 
 function pickOne(of: string[]): string {
@@ -11,6 +11,7 @@ function pickOne(of: string[]): string {
 const MakeThisAwesomeCommand = Command.extend({
   name: 'make-this-awesome',
   works: 'insideProject',
+  hidden: true,
 
   run: function (commandOptions: any, rawArgs: string[]): Promise<void> {
     (this as any)[stringUtils.camelize(this.name)](commandOptions, rawArgs);

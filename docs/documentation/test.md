@@ -62,7 +62,17 @@ You can run tests with coverage via `--code-coverage`. The coverage report will 
     <code>--config</code> (aliases: <code>-c</code>)
   </p>
   <p>
-    Use a specific config file. Defaults to the protractor config file in angular-cli.json.
+    Use a specific config file. Defaults to the karma config file in `.angular-cli.json`.
+  </p>
+</details>
+
+<details>
+  <summary>environment</summary>
+  <p>
+    <code>--environment</code> (aliases: <code>-e</code>)
+  </p>
+  <p>
+    Defines the build environment.
   </p>
 </details>
 
@@ -119,7 +129,7 @@ You can run tests with coverage via `--code-coverage`. The coverage report will 
 <details>
   <summary>single-run</summary>
   <p>
-    <code>--single-run</code> (aliases: <code>-sr</code>) <em>default value: false</em>
+    <code>--single-run</code> (aliases: <code>-sr</code>)
   </p>
   <p>
     Run tests a single time.

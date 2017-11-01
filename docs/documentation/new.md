@@ -11,7 +11,7 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>directory</summary>
   <p>
-    <code>--directory</code> (aliases: <code>-dir</code>) <em>default value: dir</em>
+    <code>--directory</code> (alias: <code>-dir</code>) <em>default value: dir</em>
   </p>
   <p>
     The directory name to create the app in.
@@ -21,17 +21,17 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>dry-run</summary>
   <p>
-    <code>--dry-run</code> (aliases: <code>-d</code>) <em>default value: false</em>
+    <code>--dry-run</code> (alias: <code>-d</code>) <em>default value: false</em>
   </p>
   <p>
-    Run through without making any changes.
+    Run through without making any changes. Will list all files that would have been created when running <code>ng new</code>.
   </p>
 </details>
 
 <details>
   <summary>inline-style</summary>
   <p>
-    <code>--inline-style</code> (aliases: <code>-is</code>) <em>default value: false</em>
+    <code>--inline-style</code> (alias: <code>-is</code>) <em>default value: false</em>
   </p>
   <p>
     Should have an inline style.
@@ -41,7 +41,7 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>inline-template</summary>
   <p>
-    <code>--inline-template</code> (aliases: <code>-it</code>) <em>default value: false</em>
+    <code>--inline-template</code> (alias: <code>-it</code>) <em>default value: false</em>
   </p>
   <p>
     Should have an inline template.
@@ -49,12 +49,25 @@ Default applications are created in a directory of the same name, with an initia
 </details>
 
 <details>
+  <summary>minimal</summary>
+  <p>
+    <code>--minimal</code> <em>default value: false</em>
+  </p>
+  <p>
+    Should create a minimal app.
+  </p>
+</details>
+
+<details>
   <summary>prefix</summary>
   <p>
-    <code>--prefix</code> (aliases: <code>-p</code>) <em>default value: app</em>
+    <code>--prefix</code> (alias: <code>-p</code>) <em>default value: app</em>
   </p>
   <p>
     The prefix to use for all component selectors.
+  </p>
+  <p>
+    You can later change the value in <em>.angular-cli.json</em> (<code>apps[0].prefix</code>).
   </p>
 </details>
 
@@ -71,7 +84,7 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>skip-commit</summary>
   <p>
-    <code>--skip-commit</code> (aliases: <code>-sc</code>) <em>default value: false</em>
+    <code>--skip-commit</code> (alias: <code>-sc</code>) <em>default value: false</em>
   </p>
   <p>
     Skip committing the first commit to git.
@@ -81,7 +94,7 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>skip-git</summary>
   <p>
-    <code>--skip-git</code> (aliases: <code>-sg</code>) <em>default value: false</em>
+    <code>--skip-git</code> (alias: <code>-sg</code>) <em>default value: false</em>
   </p>
   <p>
     Skip initializing a git repository.
@@ -91,7 +104,7 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>skip-install</summary>
   <p>
-    <code>--skip-install</code> (aliases: <code>-si</code>) <em>default value: false</em>
+    <code>--skip-install</code> (alias: <code>-si</code>) <em>default value: false</em>
   </p>
   <p>
     Skip installing packages.
@@ -101,17 +114,10 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>skip-tests</summary>
   <p>
-    <code>--skip-tests</code> (aliases: <code>-st</code>) <em>default value: false</em>
+    <code>--skip-tests (aliases: </code>-st) <em>default value: false</em>
   </p>
   <p>
     Skip creating spec files.
-  </p>
-</details>
-
-<details>
-  <summary>skip-e2e</summary>
-  <p>
-    `--skip-e2e` (alias: `-se`) _default value: false_
   </p>
   <p>
     Skip including e2e functionality.
@@ -121,10 +127,13 @@ Default applications are created in a directory of the same name, with an initia
 <details>
   <summary>source-dir</summary>
   <p>
-    <code>--source-dir</code> (aliases: <code>-sd</code>) <em>default value: src</em>
+    <code>--source-dir</code> (alias: <code>-sd</code>) <em>default value: src</em>
   </p>
   <p>
     The name of the source directory.
+  </p>
+  <p>
+    You can later change the value in <em>.angular-cli.json</em> (<code>apps[0].root</code>).
   </p>
 </details>
 
@@ -133,15 +142,25 @@ Default applications are created in a directory of the same name, with an initia
   <p>
     <code>--style</code> <em>default value: css</em>
   </p>
+  <div>
+    The style file default extension. Possible values:
+    <ul>
+      <li>css</li>
+      <li>scss</li>
+      <li>less</li>
+      <li>sass</li>
+      <li>styl (<code>stylus</code>)<li>
+    </ul>
+  </div>
   <p>
-    The style file default extension.
+    You can later change the value in <em>.angular-cli.json</em> (<code>defaults.styleExt</code>).
   </p>
 </details>
 
 <details>
   <summary>verbose</summary>
   <p>
-    <code>--verbose</code> (aliases: <code>-v</code>) <em>default value: false</em>
+    <code>--verbose</code> (alias: <code>-v</code>) <em>default value: false</em>
   </p>
   <p>
     Adds more details to output logging.

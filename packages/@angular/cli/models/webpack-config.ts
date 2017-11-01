@@ -1,3 +1,5 @@
+import { AngularCompilerPlugin } from '@ngtools/webpack';
+import { readTsconfig } from '../utilities/read-tsconfig';
 const webpackMerge = require('webpack-merge');
 import { CliConfig } from './config';
 import { BuildOptions } from './build-options';
@@ -7,22 +9,23 @@ import {
   getDevConfig,
   getProdConfig,
   getStylesConfig,
+  getServerConfig,
   getNonAotConfig,
   getAotConfig
 } from './webpack-configs';
+import * as path from 'path';
 
-const path = require('path');
-
-export interface WebpackConfigOptions {
+export interface WebpackConfigOptions<T extends BuildOptions = BuildOptions> {
   projectRoot: string;
-  buildOptions: BuildOptions;
+  buildOptions: T;
   appConfig: any;
+  tsConfig: any;
 }
 
-export class NgCliWebpackConfig {
+export class NgCliWebpackConfig<T extends BuildOptions = BuildOptions> {
   public config: any;
-  public wco: WebpackConfigOptions;
-  constructor(buildOptions: BuildOptions, appConfig: any) {
+  public wco: WebpackConfigOptions<T>;
+  constructor(buildOptions: T, appConfig: any) {
 
     this.validateBuildOptions(buildOptions);
 
@@ -31,15 +34,21 @@ export class NgCliWebpackConfig {
 
     appConfig = this.addAppConfigDefaults(appConfig);
     buildOptions = this.addTargetDefaults(buildOptions);
-    buildOptions = this.mergeConfigs(buildOptions, appConfig);
+    buildOptions = this.mergeConfigs(buildOptions, appConfig, projectRoot);
 
-    this.wco = { projectRoot, buildOptions, appConfig };
+    const tsconfigPath = path.resolve(projectRoot, appConfig.root, appConfig.tsconfig);
+    const tsConfig = readTsconfig(tsconfigPath);
+
+    this.wco = { projectRoot, buildOptions, appConfig, tsConfig };
   }
 
   public buildConfig() {
+    const platformConfig = this.wco.appConfig.platform === 'server' ?
+      getServerConfig(this.wco) : getBrowserConfig(this.wco);
+
     let webpackConfigs = [
       getCommonConfig(this.wco),
-      getBrowserConfig(this.wco),
+      platformConfig,
       getStylesConfig(this.wco),
       this.getTargetConfig(this.wco)
     ];
@@ -55,7 +64,7 @@ export class NgCliWebpackConfig {
     return this.config;
   }
 
-  public getTargetConfig(webpackConfigOptions: WebpackConfigOptions): any {
+  public getTargetConfig(webpackConfigOptions: WebpackConfigOptions<T>): any {
     switch (webpackConfigOptions.buildOptions.target) {
       case 'development':
         return getDevConfig(webpackConfigOptions);
@@ -70,34 +79,60 @@ export class NgCliWebpackConfig {
     if (buildOptions.target !== 'development' && buildOptions.target !== 'production') {
       throw new Error("Invalid build target. Only 'development' and 'production' are available.");
     }
+
+    if (buildOptions.buildOptimizer
+      && !(buildOptions.aot || buildOptions.target === 'production')) {
+      throw new Error('The `--build-optimizer` option cannot be used without `--aot`.');
+    }
   }
 
   // Fill in defaults for build targets
-  public addTargetDefaults(buildOptions: BuildOptions): BuildOptions {
-    const targetDefaults: { [target: string]: BuildOptions } = {
+  public addTargetDefaults(buildOptions: T): T {
+    const targetDefaults: { [target: string]: Partial<BuildOptions> } = {
       development: {
         environment: 'dev',
         outputHashing: 'media',
         sourcemaps: true,
-        extractCss: false
+        extractCss: false,
+        namedChunks: true,
+        aot: false,
+        buildOptimizer: false
       },
       production: {
         environment: 'prod',
         outputHashing: 'all',
         sourcemaps: false,
         extractCss: true,
+        namedChunks: false,
         aot: true
       }
     };
 
-    return Object.assign({}, targetDefaults[buildOptions.target], buildOptions);
+    let merged = Object.assign({}, targetDefaults[buildOptions.target], buildOptions);
+
+    // Use Build Optimizer on prod AOT builds by default when AngularCompilerPlugin is supported.
+    const buildOptimizerDefault = {
+      buildOptimizer: buildOptions.target == 'production' && AngularCompilerPlugin.isSupported()
+    };
+
+    merged = Object.assign({}, buildOptimizerDefault, merged);
+
+    // Default vendor chunk to false when build optimizer is on.
+    const vendorChunkDefault = {
+      vendorChunk: !merged.buildOptimizer
+    };
+
+    merged = Object.assign({}, vendorChunkDefault, merged);
+
+    return merged;
   }
 
   // Fill in defaults from .angular-cli.json
-  public mergeConfigs(buildOptions: BuildOptions, appConfig: any) {
-    const mergeableOptions = {
-      outputPath: appConfig.outDir,
-      deployUrl: appConfig.deployUrl
+  public mergeConfigs(buildOptions: T, appConfig: any, projectRoot: string): T {
+    const mergeableOptions: Partial<BuildOptions> = {
+      outputPath: path.resolve(projectRoot, appConfig.outDir),
+      deployUrl: appConfig.deployUrl,
+      baseHref: appConfig.baseHref
     };
 
     return Object.assign({}, mergeableOptions, buildOptions);

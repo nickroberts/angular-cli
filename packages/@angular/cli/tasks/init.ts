@@ -1,4 +1,4 @@
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import LinkCli from '../tasks/link-cli';
 import NpmInstall from '../tasks/npm-install';
 import { validateProjectName } from '../utilities/validate-project-name';
@@ -6,22 +6,17 @@ import {checkYarnOrCNPM} from '../utilities/check-package-manager';
 import {CliConfig} from '../models/config';
 
 const Task = require('../ember-cli/lib/models/task');
-const Promise = require('../ember-cli/lib/ext/promise');
 const SilentError = require('silent-error');
-const normalizeBlueprint = require('../ember-cli/lib/utilities/normalize-blueprint-option');
 const GitInit = require('../tasks/git-init');
+const packageJson = require('../package.json');
 
 
 export default Task.extend({
+
   run: function (commandOptions: any, rawArgs: string[]) {
     if (commandOptions.dryRun) {
       commandOptions.skipInstall = true;
     }
-
-    const installBlueprint = new this.tasks.InstallBlueprint({
-      ui: this.ui,
-      project: this.project
-    });
 
     // needs an explicit check in case it's just 'undefined'
     // due to passing of options from 'new' and 'addon'
@@ -56,6 +51,10 @@ export default Task.extend({
     const project = this.project;
     const packageName = commandOptions.name !== '.' && commandOptions.name || project.name();
 
+    if (commandOptions.style === undefined) {
+      commandOptions.style = CliConfig.fromGlobal().get('defaults.styleExt');
+    }
+
     if (!packageName) {
       const message = 'The `ng ' + this.name + '` command requires a ' +
         'package.json in current folder with name attribute or a specified name via arguments. ' +
@@ -64,47 +63,51 @@ export default Task.extend({
       return Promise.reject(new SilentError(message));
     }
 
-    const blueprintOpts = {
-      dryRun: commandOptions.dryRun,
-      blueprint: 'ng',
-      rawName: packageName,
-      targetFiles: rawArgs || '',
-      rawArgs: rawArgs.toString(),
-      sourceDir: commandOptions.sourceDir,
-      style: commandOptions.style,
-      prefix: commandOptions.prefix.trim() || 'app',
-      routing: commandOptions.routing,
-      inlineStyle: commandOptions.inlineStyle,
-      inlineTemplate: commandOptions.inlineTemplate,
-      ignoredUpdateFiles: ['favicon.ico'],
-      skipGit: commandOptions.skipGit,
-      skipTests: commandOptions.skipTests,
-      skipE2e: commandOptions.skipE2e
-    };
-
     validateProjectName(packageName);
 
-    blueprintOpts.blueprint = normalizeBlueprint(blueprintOpts.blueprint);
+    const SchematicRunTask = require('../tasks/schematic-run').default;
+    const schematicRunTask = new SchematicRunTask({
+      ui: this.ui,
+      project: this.project
+    });
 
-    return installBlueprint.run(blueprintOpts)
+    const cwd = this.project.root;
+    const schematicName = CliConfig.fromGlobal().get('defaults.schematics.newApp');
+    commandOptions.version = packageJson.version;
+
+    const runOptions = {
+      taskOptions: commandOptions,
+      workingDir: cwd,
+      emptyHost: true,
+      collectionName: commandOptions.collectionName,
+      schematicName
+    };
+
+    return schematicRunTask.run(runOptions)
       .then(function () {
-        if (commandOptions.skipGit === false) {
-          return gitInit.run(commandOptions, rawArgs);
+        if (!commandOptions.dryRun) {
+          process.chdir(commandOptions.directory);
         }
       })
       .then(function () {
         if (!commandOptions.skipInstall) {
-          return npmInstall.run();
+          return checkYarnOrCNPM().then(() => npmInstall.run());
         }
       })
       .then(function () {
-        if (commandOptions.linkCli) {
+        if (!commandOptions.dryRun && commandOptions.skipGit === false) {
+          return gitInit.run(commandOptions, rawArgs);
+        }
+      })
+      .then(function () {
+        if (!commandOptions.dryRun && commandOptions.linkCli) {
           return linkCli.run();
         }
       })
-      .then(checkYarnOrCNPM)
       .then(() => {
-        this.ui.writeLine(chalk.green(`Project '${packageName}' successfully created.`));
+        if (!commandOptions.dryRun) {
+          this.ui.writeLine(chalk.green(`Project '${packageName}' successfully created.`));
+        }
       });
   }
 });

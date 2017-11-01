@@ -1,26 +1,43 @@
-const Task = require('../ember-cli/lib/models/task');
-import * as chalk from 'chalk';
+// We only use typescript for type information here.
+// @ignoreDep typescript
+import chalk from 'chalk';
+import * as fs from 'fs';
 import * as glob from 'glob';
+import * as path from 'path';
+import { satisfies } from 'semver';
 import * as ts from 'typescript';
 import { requireProjectModule } from '../utilities/require-project-module';
-import { CliConfig } from '../models/config';
-import { LintCommandOptions } from '../commands/lint';
 
-interface CliLintConfig {
+const SilentError = require('silent-error');
+const Task = require('../ember-cli/lib/models/task');
+
+export interface CliLintConfig {
   files?: (string | string[]);
   project?: string;
   tslintConfig?: string;
   exclude?: (string | string[]);
 }
 
+export class LintTaskOptions {
+  fix: boolean;
+  force: boolean;
+  format? = 'prose';
+  silent? = false;
+  typeCheck? = false;
+  configs: Array<CliLintConfig>;
+}
+
 export default Task.extend({
-  run: function (commandOptions: LintCommandOptions) {
+  run: function (options: LintTaskOptions) {
+    options = { ...new LintTaskOptions(), ...options };
     const ui = this.ui;
     const projectRoot = this.project.root;
-    const lintConfigs: CliLintConfig[] = CliConfig.fromProject().config.lint || [];
+    const lintConfigs = options.configs || [];
 
     if (lintConfigs.length === 0) {
-      ui.writeLine(chalk.yellow('No lint configuration(s) found.'));
+      if (!options.silent) {
+        ui.writeLine(chalk.yellow('No lint configuration(s) found.'));
+      }
       return Promise.resolve(0);
     }
 
@@ -30,22 +47,41 @@ export default Task.extend({
 
     const result = lintConfigs
       .map((config) => {
-        const program: ts.Program = Linter.createProgram(config.project);
+        let program: ts.Program;
+        if (config.project) {
+          program = Linter.createProgram(config.project);
+        } else if (options.typeCheck) {
+          if (!options.silent) {
+            ui.writeLine(chalk.yellow('A "project" must be specified to enable type checking.'));
+          }
+        }
         const files = getFilesToLint(program, config, Linter);
         const lintOptions = {
-          fix: commandOptions.fix,
-          formatter: commandOptions.format
+          fix: options.fix,
+          formatter: options.format
         };
-        const lintProgram = commandOptions.typeCheck ? program : undefined;
-        const linter = new Linter(lintOptions, lintProgram);
 
+        // TSLint < 5.5 has a bug with fix and project used in combination.
+        // previous behavior of typeCheck option is maintained for those versions
+        if (satisfies(Linter.VERSION, '< 5.5') && !options.typeCheck) {
+          program = undefined;
+        }
+
+        const linter = new Linter(lintOptions, program);
+
+        let lastDirectory: string;
+        let configLoad: any;
         files.forEach((file) => {
-          const sourceFile = program.getSourceFile(file);
-          if (!sourceFile) {
-            return;
+          // The linter retrieves the SourceFile TS node directly if a program is used
+          const fileContents = program ? undefined : getFileContents(file);
+
+          // Only check for a new tslint config if path changes
+          const currentDirectory = path.dirname(file);
+          if (currentDirectory !== lastDirectory) {
+            configLoad = Configuration.findConfiguration(config.tslintConfig, file);
+            lastDirectory = currentDirectory;
           }
-          const fileContents = sourceFile.getFullText();
-          const configLoad = Configuration.findConfiguration(config.tslintConfig, file);
+
           linter.lint(file, fileContents, configLoad.results);
         });
 
@@ -65,26 +101,35 @@ export default Task.extend({
         fixes: undefined
       });
 
-    const Formatter = tslint.findFormatter(commandOptions.format);
-    const formatter = new Formatter();
+    if (!options.silent) {
+      const Formatter = tslint.findFormatter(options.format);
+      if (!Formatter) {
+        throw new SilentError(chalk.red(`Invalid lint format "${options.format}".`));
+      }
+      const formatter = new Formatter();
 
-    const output = formatter.format(result.failures, result.fixes);
-    if (output) {
-      ui.writeLine(output);
+      const output = formatter.format(result.failures, result.fixes);
+      if (output) {
+        ui.writeLine(output);
+      }
     }
 
     // print formatter output directly for non human-readable formats
-    if (['prose', 'verbose', 'stylish'].indexOf(commandOptions.format) == -1) {
-      return (result.failures.length == 0 || commandOptions.force)
+    if (['prose', 'verbose', 'stylish'].indexOf(options.format) == -1) {
+      return (result.failures.length == 0 || options.force)
         ? Promise.resolve(0) : Promise.resolve(2);
     }
 
     if (result.failures.length > 0) {
-      ui.writeLine(chalk.red('Lint errors found in the listed files.'));
-      return commandOptions.force ? Promise.resolve(0) : Promise.resolve(2);
+      if (!options.silent) {
+        ui.writeLine(chalk.red('Lint errors found in the listed files.'));
+      }
+      return options.force ? Promise.resolve(0) : Promise.resolve(2);
     }
 
-    ui.writeLine(chalk.green('All files pass linting.'));
+    if (!options.silent) {
+      ui.writeLine(chalk.green('All files pass linting.'));
+    }
     return Promise.resolve(0);
   }
 });
@@ -92,15 +137,15 @@ export default Task.extend({
 function getFilesToLint(program: ts.Program, lintConfig: CliLintConfig, Linter: any): string[] {
   let files: string[] = [];
 
-  if (lintConfig.files !== null) {
+  if (lintConfig.files) {
     files = Array.isArray(lintConfig.files) ? lintConfig.files : [lintConfig.files];
-  } else {
+  } else if (program) {
     files = Linter.getFileNames(program);
   }
 
   let globOptions = {};
 
-  if (lintConfig.exclude !== null) {
+  if (lintConfig.exclude) {
     const excludePatterns = Array.isArray(lintConfig.exclude)
       ? lintConfig.exclude
       : [lintConfig.exclude];
@@ -113,4 +158,17 @@ function getFilesToLint(program: ts.Program, lintConfig: CliLintConfig, Linter: 
     .reduce((a: string[], b: string[]) => a.concat(b), []);
 
   return files;
+}
+
+function getFileContents(file: string): string {
+  let contents: string;
+
+  // NOTE: The tslint CLI checks for and excludes MPEG transport streams; this does not.
+  try {
+    contents = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    throw new SilentError(`Could not read file "${file}".`);
+  }
+
+  return contents;
 }

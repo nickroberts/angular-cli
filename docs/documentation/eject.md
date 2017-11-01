@@ -3,7 +3,14 @@
 # ng eject
 
 ## Overview
-`ng eject` ejects your app and output the proper webpack configuration and scripts
+`ng eject` ejects your app and output the proper webpack configuration and scripts.
+
+This command uses the same flags as `ng build`, generating webpack configuration to match those
+flags.
+
+You can use `--force` to overwrite existing configurations.
+You can eject multiple times, to have a dev and prod config for instance, by renaming the ejected
+configuration and using the `--force` flag.
 
 ### Ejecting the CLI
 
@@ -113,6 +120,19 @@ ng eject
 </details>
 
 <details>
+  <summary>missing-translation</summary>
+  <p>
+    <code>--missing-translation</code>
+  </p>
+  <p>
+    How to handle missing translations for i18n.
+  </p>
+  <p>
+    Values: <code>error</code>, <code>warning</code>, <code>ignore</code>
+  </p>
+</details>
+
+<details>
   <summary>output-hashing</summary>
   <p>
     <code>--output-hashing</code> (aliases: <code>-oh</code>) <em>default value: </em>
@@ -179,6 +199,16 @@ ng eject
   </p>
   <p>
     Use a separate bundle containing only vendor libraries.
+  </p>
+</details>
+
+<details>
+  <summary>common-chunk</summary>
+  <p>
+    <code>--common-chunk</code> (aliases: <code>-cc</code>) <em>default value: true</em>
+  </p>
+  <p>
+    Use a separate bundle containing code used across multiple bundles.
   </p>
 </details>
 

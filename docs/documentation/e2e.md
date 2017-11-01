@@ -11,9 +11,12 @@
 ng e2e
 ```
 
-End-to-end tests are run via [Protractor] (https://angular.github.io/protractor/).
+End-to-end tests are run via [Protractor](https://angular.github.io/protractor/).
 
 ## Options
+
+Please note that options that are supported by `ng serve` are also supported by `ng e2e`
+
 <details>
   <summary>config</summary>
   <p>
@@ -41,6 +44,9 @@ End-to-end tests are run via [Protractor] (https://angular.github.io/protractor/
   </p>
   <p>
     Compile and Serve the app. All serve options are also available. The live-reload option defaults to false, and the default port will be random.
+  </p>
+  <p>
+    NOTE: Build failure will not launch the e2e task. You must first fix error(s) and run e2e again.
   </p>
 </details>
 

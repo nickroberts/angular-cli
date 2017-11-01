@@ -1,35 +1,41 @@
-// @ignoreDep @angular/compiler-cli
+// @ignoreDep typescript
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 import * as SourceMap from 'source-map';
 
-const {__NGTOOLS_PRIVATE_API_2} = require('@angular/compiler-cli');
 const ContextElementDependency = require('webpack/lib/dependencies/ContextElementDependency');
+const NodeWatchFileSystem = require('webpack/lib/node/NodeWatchFileSystem');
 
+import {CompilerCliIsSupported, __NGTOOLS_PRIVATE_API_2, VERSION} from './ngtools_api';
 import {WebpackResourceLoader} from './resource_loader';
 import {WebpackCompilerHost} from './compiler_host';
 import {resolveEntryModuleFromMain} from './entry_resolver';
 import {Tapable} from './webpack';
 import {PathsPlugin} from './paths-plugin';
 import {findLazyRoutes, LazyRouteMap} from './lazy_routes';
+import {VirtualFileSystemDecorator} from './virtual_file_system_decorator';
+import {time, timeEnd} from './benchmark';
 
 
 /**
  * Option Constants
  */
 export interface AotPluginOptions {
+  sourceMap?: boolean;
   tsConfigPath: string;
   basePath?: string;
   entryModule?: string;
   mainPath?: string;
   typeChecking?: boolean;
   skipCodeGeneration?: boolean;
+  replaceExport?: boolean;
   hostOverrideFileSystem?: { [path: string]: string };
   hostReplacementPaths?: { [path: string]: string };
   i18nFile?: string;
   i18nFormat?: string;
   locale?: string;
+  missingTranslation?: string;
 
   // Use tsconfig to include path globs.
   exclude?: string | string[];
@@ -46,30 +52,35 @@ export class AotPlugin implements Tapable {
   private _compilerOptions: ts.CompilerOptions;
   private _angularCompilerOptions: any;
   private _program: ts.Program;
+  private _moduleResolutionCache?: ts.ModuleResolutionCache;
   private _rootFilePath: string[];
   private _compilerHost: WebpackCompilerHost;
   private _resourceLoader: WebpackResourceLoader;
+  private _discoveredLazyRoutes: LazyRouteMap;
   private _lazyRoutes: LazyRouteMap = Object.create(null);
   private _tsConfigPath: string;
   private _entryModule: string;
 
-  private _donePromise: Promise<void>;
+  private _donePromise: Promise<void> | null;
   private _compiler: any = null;
   private _compilation: any = null;
 
   private _typeCheck = true;
   private _skipCodeGeneration = false;
+  private _replaceExport = false;
   private _basePath: string;
   private _genDir: string;
 
-  private _i18nFile: string;
-  private _i18nFormat: string;
-  private _locale: string;
+  private _i18nFile?: string;
+  private _i18nFormat?: string;
+  private _locale?: string;
+  private _missingTranslation?: string;
 
   private _diagnoseFiles: { [path: string]: boolean } = {};
   private _firstRun = true;
 
   constructor(options: AotPluginOptions) {
+    CompilerCliIsSupported();
     this._options = Object.assign({}, options);
     this._setupOptions(this._options);
   }
@@ -88,14 +99,20 @@ export class AotPlugin implements Tapable {
   }
   get genDir() { return this._genDir; }
   get program() { return this._program; }
+  get moduleResolutionCache() { return this._moduleResolutionCache; }
   get skipCodeGeneration() { return this._skipCodeGeneration; }
+  get replaceExport() { return this._replaceExport; }
   get typeCheck() { return this._typeCheck; }
   get i18nFile() { return this._i18nFile; }
   get i18nFormat() { return this._i18nFormat; }
   get locale() { return this._locale; }
+  get missingTranslation() { return this._missingTranslation; }
   get firstRun() { return this._firstRun; }
+  get lazyRoutes() { return this._lazyRoutes; }
+  get discoveredLazyRoutes() { return this._discoveredLazyRoutes; }
 
   private _setupOptions(options: AotPluginOptions) {
+    time('AotPlugin._setupOptions');
     // Fill in the missing options.
     if (!options.hasOwnProperty('tsConfigPath')) {
       throw new Error('Must specify "tsConfigPath" in the configuration of @ngtools/webpack.');
@@ -116,9 +133,14 @@ export class AotPlugin implements Tapable {
     const configResult = ts.readConfigFile(this._tsConfigPath, ts.sys.readFile);
     if (configResult.error) {
       const diagnostic = configResult.error;
-      const {line, character} = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
       const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
-      throw new Error(`${diagnostic.file.fileName} (${line + 1},${character + 1}): ${message})`);
+
+      if (diagnostic.file) {
+        const {line, character} = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start!);
+        throw new Error(`${diagnostic.file.fileName} (${line + 1},${character + 1}): ${message})`);
+      } else {
+        throw new Error(message);
+      }
     }
 
     const tsConfigJson = configResult.config;
@@ -152,7 +174,7 @@ export class AotPlugin implements Tapable {
     }
 
     const tsConfig = ts.parseJsonConfigFileContent(
-      tsConfigJson, ts.sys, basePath, null, this._tsConfigPath);
+      tsConfigJson, ts.sys, basePath, undefined, this._tsConfigPath);
 
     let fileNames = tsConfig.fileNames;
     this._rootFilePath = fileNames;
@@ -163,6 +185,32 @@ export class AotPlugin implements Tapable {
     let genDir = path.join(basePath, '$$_gendir');
 
     this._compilerOptions = tsConfig.options;
+
+    // Default plugin sourceMap to compiler options setting.
+    if (!options.hasOwnProperty('sourceMap')) {
+      options.sourceMap = this._compilerOptions.sourceMap || false;
+    }
+
+    // Force the right sourcemap options.
+    if (options.sourceMap) {
+      this._compilerOptions.sourceMap = true;
+      this._compilerOptions.inlineSources = true;
+      this._compilerOptions.inlineSourceMap = false;
+      this._compilerOptions.sourceRoot = basePath;
+    } else {
+      this._compilerOptions.sourceMap = false;
+      this._compilerOptions.sourceRoot = undefined;
+      this._compilerOptions.inlineSources = undefined;
+      this._compilerOptions.inlineSourceMap = undefined;
+      this._compilerOptions.mapRoot = undefined;
+    }
+
+    // Default noEmitOnError to true
+    if (this._compilerOptions.noEmitOnError !== false) {
+      this._compilerOptions.noEmitOnError = true;
+    }
+
+    // Compose Angular Compiler Options.
     this._angularCompilerOptions = Object.assign(
       { genDir },
       this._compilerOptions,
@@ -178,23 +226,23 @@ export class AotPlugin implements Tapable {
     this._basePath = basePath;
     this._genDir = genDir;
 
-    if (options.hasOwnProperty('typeChecking')) {
+    if (options.typeChecking !== undefined) {
       this._typeCheck = options.typeChecking;
     }
-    if (options.hasOwnProperty('skipCodeGeneration')) {
+    if (options.skipCodeGeneration !== undefined) {
       this._skipCodeGeneration = options.skipCodeGeneration;
     }
 
     this._compilerHost = new WebpackCompilerHost(this._compilerOptions, this._basePath);
 
     // Override some files in the FileSystem.
-    if (options.hasOwnProperty('hostOverrideFileSystem')) {
+    if (options.hostOverrideFileSystem) {
       for (const filePath of Object.keys(options.hostOverrideFileSystem)) {
         this._compilerHost.writeFile(filePath, options.hostOverrideFileSystem[filePath], false);
       }
     }
     // Override some files in the FileSystem with paths from the actual file system.
-    if (options.hasOwnProperty('hostReplacementPaths')) {
+    if (options.hostReplacementPaths) {
       for (const filePath of Object.keys(options.hostReplacementPaths)) {
         const replacementFilePath = options.hostReplacementPaths[filePath];
         const content = this._compilerHost.readFile(replacementFilePath);
@@ -205,9 +253,19 @@ export class AotPlugin implements Tapable {
     this._program = ts.createProgram(
       this._rootFilePath, this._compilerOptions, this._compilerHost);
 
+    // We use absolute paths everywhere.
+    if (ts.createModuleResolutionCache) {
+      this._moduleResolutionCache = ts.createModuleResolutionCache(
+        this._basePath,
+        (fileName: string) => this._compilerHost.resolve(fileName),
+      );
+    }
+
     // We enable caching of the filesystem in compilerHost _after_ the program has been created,
     // because we don't want SourceFile instances to be cached past this point.
     this._compilerHost.enableCaching();
+
+    this._resourceLoader = new WebpackResourceLoader();
 
     if (options.entryModule) {
       this._entryModule = options.entryModule;
@@ -232,13 +290,27 @@ export class AotPlugin implements Tapable {
     if (options.hasOwnProperty('locale')) {
       this._locale = options.locale;
     }
+    if (options.hasOwnProperty('replaceExport')) {
+      this._replaceExport = options.replaceExport || this._replaceExport;
+    }
+    if (options.hasOwnProperty('missingTranslation')) {
+      const [MAJOR, MINOR, PATCH] = VERSION.full.split('.').map((x: string) => parseInt(x, 10));
+      if (MAJOR < 4 || (MINOR == 2 && PATCH < 2)) {
+        console.warn((`The --missing-translation parameter will be ignored because it is only `
+          + `compatible with Angular version 4.2.0 or higher. If you want to use it, please `
+          + `upgrade your Angular version.\n`));
+      }
+      this._missingTranslation = options.missingTranslation;
+    }
+    timeEnd('AotPlugin._setupOptions');
   }
 
   private _findLazyRoutesInAst(): LazyRouteMap {
+    time('AotPlugin._findLazyRoutesInAst');
     const result: LazyRouteMap = Object.create(null);
     const changedFilePaths = this._compilerHost.getChangedFilePaths();
     for (const filePath of changedFilePaths) {
-      const fileLazyRoutes = findLazyRoutes(filePath, this._program, this._compilerHost);
+      const fileLazyRoutes = findLazyRoutes(filePath, this._compilerHost, this._program);
       for (const routeKey of Object.keys(fileLazyRoutes)) {
         const route = fileLazyRoutes[routeKey];
         if (routeKey in this._lazyRoutes) {
@@ -256,23 +328,48 @@ export class AotPlugin implements Tapable {
         }
       }
     }
+    timeEnd('AotPlugin._findLazyRoutesInAst');
     return result;
+  }
+
+  private _getLazyRoutesFromNgtools() {
+    try {
+      time('AotPlugin._getLazyRoutesFromNgtools');
+      const result = __NGTOOLS_PRIVATE_API_2.listLazyRoutes({
+        program: this._program,
+        host: this._compilerHost,
+        angularCompilerOptions: this._angularCompilerOptions,
+        entryModule: this._entryModule
+      });
+      timeEnd('AotPlugin._getLazyRoutesFromNgtools');
+      return result;
+    } catch (err) {
+      // We silence the error that the @angular/router could not be found. In that case, there is
+      // basically no route supported by the app itself.
+      if (err.message.startsWith('Could not resolve module @angular/router')) {
+        return {};
+      } else {
+        throw err;
+      }
+    }
   }
 
   // registration hook for webpack plugin
   apply(compiler: any) {
     this._compiler = compiler;
 
+    // Decorate inputFileSystem to serve contents of CompilerHost.
+    // Use decorated inputFileSystem in watchFileSystem.
+    compiler.plugin('environment', () => {
+      compiler.inputFileSystem = new VirtualFileSystemDecorator(
+        compiler.inputFileSystem, this._compilerHost);
+      compiler.watchFileSystem = new NodeWatchFileSystem(compiler.inputFileSystem);
+    });
+
     compiler.plugin('invalid', () => {
       // Turn this off as soon as a file becomes invalid and we're about to start a rebuild.
       this._firstRun = false;
       this._diagnoseFiles = {};
-
-      if (compiler.watchFileSystem.watcher) {
-        compiler.watchFileSystem.watcher.once('aggregated', (changes: string[]) => {
-          changes.forEach((fileName: string) => this._compilerHost.invalidate(fileName));
-        });
-      }
     });
 
     // Add lazy modules to the context module for @angular/core/src/linker
@@ -286,6 +383,14 @@ export class AotPlugin implements Tapable {
       // being built.
       const angularCoreModuleDir = path.dirname(angularCoreModulePath).split(/node_modules/).pop();
 
+      // Also support the es2015 in Angular versions that have it.
+      let angularCoreEs2015Dir: string | undefined;
+      if (angularCorePackageJson['es2015']) {
+        const angularCoreEs2015Path = path.resolve(path.dirname(angularCorePackagePath),
+        angularCorePackageJson['es2015']);
+        angularCoreEs2015Dir = path.dirname(angularCoreEs2015Path).split(/node_modules/).pop();
+      }
+
       cmf.plugin('after-resolve', (result: any, callback: (err?: any, request?: any) => void) => {
         if (!result) {
           return callback();
@@ -296,13 +401,13 @@ export class AotPlugin implements Tapable {
         //   The other logic is for flat modules and requires reading the package.json of angular
         //     (see above).
         if (!result.resource.endsWith(path.join('@angular/core/src/linker'))
-            && (angularCoreModuleDir && !result.resource.endsWith(angularCoreModuleDir))) {
+            && !(angularCoreModuleDir && result.resource.endsWith(angularCoreModuleDir))
+            && !(angularCoreEs2015Dir && result.resource.endsWith(angularCoreEs2015Dir))) {
           return callback(null, result);
         }
 
-        this.done.then(() => {
-          result.resource = this.skipCodeGeneration ? this.basePath : this.genDir;
-          result.recursive = true;
+        this.done!.then(() => {
+          result.resource = this.genDir;
           result.dependencies.forEach((d: any) => d.critical = false);
           result.resolveDependencies = (_fs: any, _resource: any, _recursive: any,
             _regExp: RegExp, cb: any) => {
@@ -326,22 +431,31 @@ export class AotPlugin implements Tapable {
 
     compiler.plugin('make', (compilation: any, cb: any) => this._make(compilation, cb));
     compiler.plugin('after-emit', (compilation: any, cb: any) => {
-      this._donePromise = null;
-      this._compilation = null;
       compilation._ngToolsWebpackPluginInstance = null;
       cb();
+    });
+    compiler.plugin('done', () => {
+      this._donePromise = null;
+      this._compilation = null;
     });
 
     compiler.plugin('after-resolvers', (compiler: any) => {
       // Virtual file system.
+      // Wait for the plugin to be done when requesting `.ts` files directly (entry points), or
+      // when the issuer is a `.ts` file.
       compiler.resolvers.normal.plugin('before-resolve', (request: any, cb: () => void) => {
-        if (request.request.match(/\.ts$/)) {
+        if (this.done && (request.request.endsWith('.ts')
+          || (request.context.issuer && request.context.issuer.endsWith('.ts')))) {
           this.done.then(() => cb(), () => cb());
         } else {
           cb();
         }
       });
+    });
+
+    compiler.plugin('normal-module-factory', (nmf: any) => {
       compiler.resolvers.normal.apply(new PathsPlugin({
+        nmf,
         tsConfigPath: this._tsConfigPath,
         compilerOptions: this._compilerOptions,
         compilerHost: this._compilerHost
@@ -384,24 +498,29 @@ export class AotPlugin implements Tapable {
       return;
     }
 
-    const diagnostics: ts.Diagnostic[] = []
-      .concat(
-        this._program.getCompilerOptions().declaration
-          ? this._program.getDeclarationDiagnostics(sourceFile) : [],
-        this._program.getSyntacticDiagnostics(sourceFile),
-        this._program.getSemanticDiagnostics(sourceFile)
-      );
+    const diagnostics: Array<ts.Diagnostic> = [
+        ...(this._program.getCompilerOptions().declaration
+            ? this._program.getDeclarationDiagnostics(sourceFile) : []),
+        ...this._program.getSyntacticDiagnostics(sourceFile),
+        ...this._program.getSemanticDiagnostics(sourceFile)
+    ];
 
     if (diagnostics.length > 0) {
       diagnostics.forEach(diagnostic => {
-        const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
-
-        const sourceText = diagnostic.file.getFullText();
-        let {line, character, fileName} = this._translateSourceMap(sourceText,
-          diagnostic.file.fileName, position);
-
         const messageText = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
-        const message = `${fileName} (${line + 1},${character + 1}): ${messageText}`;
+        let message;
+
+        if (diagnostic.file) {
+          const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start!);
+
+          const sourceText = diagnostic.file.getFullText();
+          let {line, character, fileName} = this._translateSourceMap(sourceText,
+            diagnostic.file.fileName, position);
+
+          message = `${fileName} (${line + 1},${character + 1}): ${messageText}`;
+        } else {
+          message = messageText;
+        }
 
         switch (diagnostic.category) {
           case ts.DiagnosticCategory.Error:
@@ -416,6 +535,7 @@ export class AotPlugin implements Tapable {
   }
 
   private _make(compilation: any, cb: (err?: any, request?: any) => void) {
+    time('AotPlugin._make');
     this._compilation = compilation;
     if (this._compilation._ngToolsWebpackPluginInstance) {
       return cb(new Error('An @ngtools/webpack plugin already exist for this compilation.'));
@@ -423,7 +543,7 @@ export class AotPlugin implements Tapable {
 
     this._compilation._ngToolsWebpackPluginInstance = this;
 
-    this._resourceLoader = new WebpackResourceLoader(compilation);
+    this._resourceLoader.update(compilation);
 
     this._donePromise = Promise.resolve()
       .then(() => {
@@ -431,6 +551,7 @@ export class AotPlugin implements Tapable {
           return;
         }
 
+        time('AotPlugin._make.codeGen');
         // Create the Code Generator.
         return __NGTOOLS_PRIVATE_API_2.codeGen({
           basePath: this._basePath,
@@ -441,9 +562,11 @@ export class AotPlugin implements Tapable {
           i18nFile: this.i18nFile,
           i18nFormat: this.i18nFormat,
           locale: this.locale,
+          missingTranslation: this.missingTranslation,
 
           readResource: (path: string) => this._resourceLoader.get(path)
-        });
+        })
+        .then(() => timeEnd('AotPlugin._make.codeGen'));
       })
       .then(() => {
         // Get the ngfactory that were created by the previous step, and add them to the root
@@ -459,51 +582,54 @@ export class AotPlugin implements Tapable {
         // transitive modules, which include files that might just have been generated.
         // This needs to happen after the code generator has been created for generated files
         // to be properly resolved.
+        time('AotPlugin._make.createProgram');
         this._program = ts.createProgram(
           this._rootFilePath, this._compilerOptions, this._compilerHost, this._program);
+        timeEnd('AotPlugin._make.createProgram');
       })
       .then(() => {
         // Re-diagnose changed files.
+        time('AotPlugin._make.diagnose');
         const changedFilePaths = this._compilerHost.getChangedFilePaths();
         changedFilePaths.forEach(filePath => this.diagnose(filePath));
+        timeEnd('AotPlugin._make.diagnose');
       })
       .then(() => {
         if (this._typeCheck) {
+          time('AotPlugin._make._typeCheck');
           const diagnostics = this._program.getGlobalDiagnostics();
           if (diagnostics.length > 0) {
             const message = diagnostics
               .map(diagnostic => {
-                const {line, character} = diagnostic.file.getLineAndCharacterOfPosition(
-                  diagnostic.start);
                 const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
-                return `${diagnostic.file.fileName} (${line + 1},${character + 1}): ${message})`;
+
+                if (diagnostic.file) {
+                  const {line, character} = diagnostic.file.getLineAndCharacterOfPosition(
+                    diagnostic.start!);
+                  return `${diagnostic.file.fileName} (${line + 1},${character + 1}): ${message})`;
+                } else {
+                  return message;
+                }
               })
               .join('\n');
 
             throw new Error(message);
           }
+          timeEnd('AotPlugin._make._typeCheck');
         }
-      })
-      .then(() => {
-        // Populate the file system cache with the virtual module.
-        this._compilerHost.populateWebpackResolver(this._compiler.resolvers.normal);
       })
       .then(() => {
         // We need to run the `listLazyRoutes` the first time because it also navigates libraries
         // and other things that we might miss using the findLazyRoutesInAst.
-        let discoveredLazyRoutes: LazyRouteMap = this.firstRun ?
-          __NGTOOLS_PRIVATE_API_2.listLazyRoutes({
-            program: this._program,
-            host: this._compilerHost,
-            angularCompilerOptions: this._angularCompilerOptions,
-            entryModule: this._entryModule
-          })
+        time('AotPlugin._make._discoveredLazyRoutes');
+        this._discoveredLazyRoutes = this.firstRun
+          ? this._getLazyRoutesFromNgtools()
           : this._findLazyRoutesInAst();
 
         // Process the lazy routes discovered.
-        Object.keys(discoveredLazyRoutes)
+        Object.keys(this.discoveredLazyRoutes)
           .forEach(k => {
-            const lazyRoute = discoveredLazyRoutes[k];
+            const lazyRoute = this.discoveredLazyRoutes[k];
             k = k.split('#')[0];
             if (lazyRoute === null) {
               return;
@@ -512,19 +638,23 @@ export class AotPlugin implements Tapable {
             if (this.skipCodeGeneration) {
               this._lazyRoutes[k] = lazyRoute;
             } else {
-              const lr = path.relative(this.basePath, lazyRoute.replace(/\.ts$/, '.ngfactory.ts'));
+              const factoryPath = lazyRoute.replace(/(\.d)?\.ts$/, '.ngfactory.ts');
+              const lr = path.relative(this.basePath, factoryPath);
               this._lazyRoutes[k + '.ngfactory'] = path.join(this.genDir, lr);
             }
           });
+        timeEnd('AotPlugin._make._discoveredLazyRoutes');
       })
       .then(() => {
         if (this._compilation.errors == 0) {
           this._compilerHost.resetChangedFileTracker();
         }
 
+        timeEnd('AotPlugin._make');
         cb();
       }, (err: any) => {
-        compilation.errors.push(err);
+        compilation.errors.push(err.stack);
+        timeEnd('AotPlugin._make');
         cb();
       });
   }

@@ -39,12 +39,22 @@ All the build Options are available in serve, below are the additional options.
 </details>
 
 <details>
-  <summary>live-reload-client</summary>
+  <summary>public-host</summary>
   <p>
-    <code>--live-reload-client</code>
+    <code>--public-host</code> (aliases: <code>--live-reload-client</code>)
   </p>
   <p>
-    Specify the URL that the live reload browser client will use.
+    Specify the URL that the browser client will use.
+  </p>
+</details>
+
+<details>
+  <summary>disable-host-check</summary>
+  <p>
+    <code>--disable-host-check</code> <em>default value: false</em>
+  </p>
+  <p>
+    Don't verify connected clients are part of allowed hosts.
   </p>
 </details>
 
@@ -179,6 +189,19 @@ All the build Options are available in serve, below are the additional options.
 </details>
 
 <details>
+  <summary>missing-translation</summary>
+  <p>
+    <code>--missing-translation</code>
+  </p>
+  <p>
+    How to handle missing translations for i18n.
+  </p>
+  <p>
+    Values: <code>error</code>, <code>warning</code>, <code>ignore</code>
+  </p>
+</details>
+
+<details>
   <summary>output-hashing</summary>
   <p>
     <code>--output-hashing</code> (aliases: <code>-oh</code>) <em>default value: </em>
@@ -219,6 +242,16 @@ All the build Options are available in serve, below are the additional options.
 </details>
 
 <details>
+  <summary>proxy-config</summary>
+  <p>
+    <code>--proxy-config</code> (aliases: <code>-pc</code>)
+  </p>
+  <p>
+    Use a <a href="https://github.com/angular/angular-cli/blob/master/docs/documentation/stories/proxy.md">proxy</a> configuration file to send some requests to a backend server rather than the webpack dev server.
+  </p>
+</details>
+
+<details>
   <summary>sourcemap</summary>
   <p>
     <code>--sourcemap</code> (aliases: <code>-sm</code>, <code>sourcemaps</code>)
@@ -245,6 +278,16 @@ All the build Options are available in serve, below are the additional options.
   </p>
   <p>
     Use a separate bundle containing only vendor libraries.
+  </p>
+</details>
+
+<details>
+  <summary>common-chunk</summary>
+  <p>
+    <code>--common-chunk</code> (aliases: <code>-cc</code>) <em>default value: true</em>
+  </p>
+  <p>
+    Use a separate bundle containing code used across multiple bundles.
   </p>
 </details>
 

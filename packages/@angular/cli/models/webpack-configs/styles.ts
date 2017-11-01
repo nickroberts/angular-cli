@@ -11,6 +11,7 @@ const cssnano = require('cssnano');
 const postcssUrl = require('postcss-url');
 const autoprefixer = require('autoprefixer');
 const ExtractTextPlugin = require('extract-text-webpack-plugin');
+const customProperties = require('postcss-custom-properties');
 
 /**
  * Enumerate loaders and their dependencies from this file to let the dependency validator
@@ -47,8 +48,16 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
   const deployUrl = wco.buildOptions.deployUrl || '';
 
   const postcssPluginCreator = function() {
+    // safe settings based on: https://github.com/ben-eb/cssnano/issues/358#issuecomment-283696193
+    const importantCommentRe = /@preserve|@license|[@#]\s*source(?:Mapping)?URL|^!/i;
+    const minimizeOptions = {
+      autoprefixer: false, // full pass with autoprefixer is run separately
+      safe: true,
+      mergeLonghand: false, // version 3+ should be safe; cssnano currently uses 2.x
+      discardComments : { remove: (comment: string) => !importantCommentRe.test(comment) }
+    };
+
     return [
-      autoprefixer(),
       postcssUrl({
         url: (URL: string) => {
           // Only convert root relative URLs, which CSS-Loader won't process into require().
@@ -69,16 +78,19 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
             return `/${baseHref}/${deployUrl}/${URL}`.replace(/\/\/+/g, '/');
           }
         }
-      })
+      }),
+      autoprefixer(),
+      customProperties({ preserve: true})
     ].concat(
-        minimizeCss ? [cssnano({ safe: true, autoprefixer: false })] : []
+        minimizeCss ? [cssnano(minimizeOptions)] : []
     );
   };
   (postcssPluginCreator as any)[postcssArgs] = {
     variableImports: {
       'autoprefixer': 'autoprefixer',
       'postcss-url': 'postcssUrl',
-      'cssnano': 'cssnano'
+      'cssnano': 'cssnano',
+      'postcss-custom-properties': 'customProperties'
     },
     variables: { minimizeCss, baseHref, deployUrl }
   };
@@ -88,6 +100,7 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
 
   // use includePaths from appConfig
   const includePaths: string[] = [];
+  let lessPathOptions: { paths: string[] };
 
   if (appConfig.stylePreprocessorOptions
     && appConfig.stylePreprocessorOptions.includePaths
@@ -95,6 +108,9 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
   ) {
     appConfig.stylePreprocessorOptions.includePaths.forEach((includePath: string) =>
       includePaths.push(path.resolve(appRoot, includePath)));
+    lessPathOptions = {
+      paths: includePaths,
+    };
   }
 
   // process global styles
@@ -126,7 +142,8 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
     { test: /\.less$/, use: [{
         loader: 'less-loader',
         options: {
-          sourceMap: cssSourceMap
+          sourceMap: cssSourceMap,
+          ...lessPathOptions,
         }
       }]
     },
@@ -176,22 +193,27 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
           ...commonLoaders,
           ...(use as webpack.Loader[])
         ],
-        fallback: 'style-loader',
         // publicPath needed as a workaround https://github.com/angular/angular-cli/issues/4035
         publicPath: ''
       };
       const ret: any = {
         include: globalStylePaths,
         test,
-        use: ExtractTextPlugin.extract(extractTextPlugin)
+        use: buildOptions.extractCss ? ExtractTextPlugin.extract(extractTextPlugin)
+                                     : ['style-loader', ...extractTextPlugin.use]
       };
       // Save the original options as arguments for eject.
-      ret[pluginArgs] = extractTextPlugin;
+      if (buildOptions.extractCss) {
+        ret[pluginArgs] = extractTextPlugin;
+      }
       return ret;
     }));
   }
 
   if (buildOptions.extractCss) {
+    // extract global css from js files into own css file
+    extraPlugins.push(
+      new ExtractTextPlugin({ filename: `[name]${hashFormat.extract}.bundle.css` }));
     // suppress empty .js files in css only entry points
     extraPlugins.push(new SuppressExtractedTextChunksWebpackPlugin());
   }
@@ -199,12 +221,6 @@ export function getStylesConfig(wco: WebpackConfigOptions) {
   return {
     entry: entryPoints,
     module: { rules },
-    plugins: [
-      // extract global css from js files into own css file
-      new ExtractTextPlugin({
-        filename: `[name]${hashFormat.extract}.bundle.css`,
-        disable: !buildOptions.extractCss
-      })
-    ].concat(extraPlugins)
+    plugins: [].concat(extraPlugins)
   };
 }

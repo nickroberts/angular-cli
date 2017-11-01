@@ -25,9 +25,10 @@ Error.stackTraceLimit = Infinity;
  * Here's a short description of those flags:
  *   --debug          If a test fails, block the thread so the temporary directory isn't deleted.
  *   --noproject      Skip creating a project or using one.
- *   --nobuild        Skip building the packages. Use with --nolink and --reuse to quickly
+ *   --nobuild        Skip building the packages. Use with --noglobal and --reuse to quickly
  *                    rerun tests.
- *   --nolink         Skip linking your local @angular/cli directory. Can save a few seconds.
+ *   --noglobal       Skip linking your local @angular/cli directory. Can save a few seconds.
+ *   --nosilent       Never silence ng commands.
  *   --ng-sha=SHA     Use a specific ng-sha. Similar to nightly but point to a master SHA instead
  *                    of using the latest.
  *   --glob           Run tests matching this glob pattern (relative to tests/e2e/).
@@ -36,11 +37,26 @@ Error.stackTraceLimit = Infinity;
  *   --reuse=/path    Use a path instead of create a new project. That project should have been
  *                    created, and npm installed. Ideally you want a project created by a previous
  *                    run of e2e.
+ *   --nb-shards      Total number of shards that this is part of. Default is 2 if --shard is
+ *                    passed in.
+ *   --shard          Index of this processes' shard.
+ *   --devkit=path    Path to the devkit to use. The devkit will be built prior to running.
+ *   --tmpdir=path    Override temporary directory to use for new projects.
  * If unnamed flags are passed in, the list of tests will be filtered to include only those passed.
  */
 const argv = minimist(process.argv.slice(2), {
-  'boolean': ['debug', 'nolink', 'nightly', 'noproject', 'verbose', 'eject'],
-  'string': ['glob', 'ignore', 'reuse', 'ng-sha', ]
+  'boolean': [
+    'appveyor',
+    'debug',
+    'eject',
+    'nightly',
+    'noglobal',
+    'nosilent',
+    'noproject',
+    'verbose',
+  ],
+  'string': ['devkit', 'glob', 'ignore', 'reuse', 'ng-sha', 'tmpdir'],
+  'number': ['nb-shards', 'shard']
 });
 
 
@@ -73,7 +89,6 @@ ConsoleLoggerStack.start(new IndentLogger('name'))
 
 const testGlob = argv.glob || 'tests/**/*.ts';
 let currentFileName = null;
-let index = 0;
 
 const e2eRoot = path.join(__dirname, 'e2e');
 const allSetups = glob.sync(path.join(e2eRoot, 'setup/**/*.ts'), { nodir: true })
@@ -83,20 +98,26 @@ const allTests = glob.sync(path.join(e2eRoot, testGlob), { nodir: true, ignore: 
   .map(name => path.relative(e2eRoot, name))
   .sort();
 
-const testsToRun = allSetups
-  .concat(allTests
-    .filter(name => {
-      // Check for naming tests on command line.
-      if (argv._.length == 0) {
-        return true;
-      }
+const shardId = ('shard' in argv) ? argv['shard'] : null;
+const nbShards = (shardId === null ? 1 : argv['nb-shards']) || 2;
+const tests = allTests
+  .filter(name => {
+    // Check for naming tests on command line.
+    if (argv._.length == 0) {
+      return true;
+    }
 
-      return argv._.some(argName => {
-        return path.join(process.cwd(), argName) == path.join(__dirname, 'e2e', name)
-          || argName == name
-          || argName == name.replace(/\.ts$/, '');
-      });
-    }));
+    return argv._.some(argName => {
+      return path.join(process.cwd(), argName) == path.join(__dirname, 'e2e', name)
+        || argName == name
+        || argName == name.replace(/\.ts$/, '');
+    });
+  });
+
+// Remove tests that are not part of this shard.
+const shardedTests = tests
+  .filter((name, i) => (shardId === null || (i % nbShards) == shardId));
+const testsToRun = allSetups.concat(shardedTests);
 
 
 /**
@@ -111,7 +132,7 @@ if (testsToRun.length == allTests.length) {
 
 setGlobalVariable('argv', argv);
 
-testsToRun.reduce((previous, relativeName) => {
+testsToRun.reduce((previous, relativeName, testIndex) => {
   // Make sure this is a windows compatible path.
   let absoluteName = path.join(e2eRoot, relativeName);
   if (/^win/.test(process.platform)) {
@@ -131,7 +152,7 @@ testsToRun.reduce((previous, relativeName) => {
     let clean = true;
     let previousDir = null;
     return Promise.resolve()
-      .then(() => printHeader(currentFileName))
+      .then(() => printHeader(currentFileName, testIndex))
       .then(() => previousDir = process.cwd())
       .then(() => ConsoleLoggerStack.push(currentFileName))
       .then(() => fn(() => clean = false))
@@ -196,9 +217,14 @@ function isTravis() {
   return process.env['TRAVIS'];
 }
 
-function printHeader(testName) {
-  const text = `${++index} of ${testsToRun.length}`;
-  console.log(green(`Running "${bold(blue(testName))}" (${bold(white(text))})...`));
+function printHeader(testName: string, testIndex: number) {
+  const text = `${testIndex + 1} of ${testsToRun.length}`;
+  const fullIndex = (testIndex < allSetups.length ? testIndex
+      : (testIndex - allSetups.length) * nbShards + shardId + allSetups.length) + 1;
+  const length = tests.length + allSetups.length;
+  const shard = shardId === null ? ''
+      : yellow(` [${shardId}:${nbShards}]` + bold(` (${fullIndex}/${length})`));
+  console.log(green(`Running "${bold(blue(testName))}" (${bold(white(text))}${shard})...`));
 
   if (isTravis()) {
     console.log(`travis_fold:start:${encode(testName)}`);

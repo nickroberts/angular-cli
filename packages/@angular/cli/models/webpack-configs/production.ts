@@ -3,16 +3,31 @@ import * as webpack from 'webpack';
 import * as fs from 'fs';
 import * as semver from 'semver';
 import { stripIndent } from 'common-tags';
+import { LicenseWebpackPlugin } from 'license-webpack-plugin';
+import { PurifyPlugin } from '@angular-devkit/build-optimizer';
 import { StaticAssetPlugin } from '../../plugins/static-asset';
 import { GlobCopyWebpackPlugin } from '../../plugins/glob-copy-webpack-plugin';
 import { WebpackConfigOptions } from '../webpack-config';
+import { readTsconfig } from '../../utilities/read-tsconfig';
+import { requireProjectModule } from '../../utilities/require-project-module';
+
+const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
+
+/**
+ * license-webpack-plugin has a peer dependency on webpack-sources, list it in a comment to
+ * let the dependency validator know it is used.
+ *
+ * require('webpack-sources')
+ */
 
 
-export const getProdConfig = function (wco: WebpackConfigOptions) {
+export function getProdConfig(wco: WebpackConfigOptions) {
   const { projectRoot, buildOptions, appConfig } = wco;
 
+  const projectTs = requireProjectModule(projectRoot, 'typescript');
+
   let extraPlugins: any[] = [];
-  let entryPoints: {[key: string]: string[]} = {};
+  let entryPoints: { [key: string]: string[] } = {};
 
   if (appConfig.serviceWorker) {
     const nodeModules = path.resolve(projectRoot, 'node_modules');
@@ -56,16 +71,25 @@ export const getProdConfig = function (wco: WebpackConfigOptions) {
       `);
     }
 
+    // CopyWebpackPlugin replaces GlobCopyWebpackPlugin, but AngularServiceWorkerPlugin depends
+    // on specific behaviour from latter.
+    // AngularServiceWorkerPlugin expects the ngsw-manifest.json to be present in the 'emit' phase
+    // but with CopyWebpackPlugin it's only there on 'after-emit'.
+    // So for now we keep it here, but if AngularServiceWorkerPlugin changes we remove it.
     extraPlugins.push(new GlobCopyWebpackPlugin({
-      patterns: ['ngsw-manifest.json', 'src/ngsw-manifest.json'],
+      patterns: [
+        'ngsw-manifest.json',
+        { glob: 'ngsw-manifest.json', input: path.resolve(projectRoot, appConfig.root), output: '' }
+      ],
       globOptions: {
+        cwd: projectRoot,
         optional: true,
       },
     }));
 
     // Load the Webpack plugin for manifest generation and install it.
     const AngularServiceWorkerPlugin = require('@angular/service-worker/build/webpack')
-        .AngularServiceWorkerPlugin;
+      .AngularServiceWorkerPlugin;
     extraPlugins.push(new AngularServiceWorkerPlugin({
       baseHref: buildOptions.baseHref || '/',
     }));
@@ -79,18 +103,55 @@ export const getProdConfig = function (wco: WebpackConfigOptions) {
     entryPoints['sw-register'] = [registerPath];
   }
 
+  if (buildOptions.extractLicenses) {
+    extraPlugins.push(new LicenseWebpackPlugin({
+      pattern: /^(MIT|ISC|BSD.*)$/,
+      suppressErrors: true,
+      perChunkOutput: false,
+      outputFilename: `3rdpartylicenses.txt`
+    }));
+  }
+
+  const uglifyCompressOptions: any = {};
+
+  if (buildOptions.buildOptimizer) {
+    // This plugin must be before webpack.optimize.UglifyJsPlugin.
+    extraPlugins.push(new PurifyPlugin());
+    uglifyCompressOptions.pure_getters = true;
+    // PURE comments work best with 3 passes.
+    // See https://github.com/webpack/webpack/issues/2899#issuecomment-317425926.
+    uglifyCompressOptions.passes = 3;
+  }
+
+  // Read the tsconfig to determine if we should apply ES6 uglify.
+  const tsconfigPath = path.resolve(projectRoot, appConfig.root, appConfig.tsconfig);
+  const tsConfig = readTsconfig(tsconfigPath);
+  const supportES2015 = tsConfig.options.target !== projectTs.ScriptTarget.ES3
+    && tsConfig.options.target !== projectTs.ScriptTarget.ES5;
+
   return {
     entry: entryPoints,
     plugins: [
-      new webpack.DefinePlugin({
-        'process.env.NODE_ENV': JSON.stringify('production')
+      new webpack.EnvironmentPlugin({
+        'NODE_ENV': 'production'
       }),
-      new (<any>webpack).HashedModuleIdsPlugin(),
-      new webpack.optimize.UglifyJsPlugin(<any>{
-        mangle: { screw_ie8: true },
-        compress: { screw_ie8: true, warnings: buildOptions.verbose },
-        sourceMap: buildOptions.sourcemaps
-      })
-    ].concat(extraPlugins)
+      new webpack.HashedModuleIdsPlugin(),
+      new webpack.optimize.ModuleConcatenationPlugin(),
+      new UglifyJSPlugin({
+        sourceMap: buildOptions.sourcemaps,
+        uglifyOptions: {
+          ecma: supportES2015 ? 6 : 5,
+          warnings: buildOptions.verbose,
+          ie8: false,
+          mangle: true,
+          compress: uglifyCompressOptions,
+          output: {
+            ascii_only: true,
+            comments: false
+          },
+        }
+      }),
+      ...extraPlugins
+    ]
   };
-};
+}

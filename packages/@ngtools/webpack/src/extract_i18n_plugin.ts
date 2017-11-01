@@ -1,10 +1,8 @@
-// @ignoreDep @angular/compiler-cli
 import * as ts from 'typescript';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const {__NGTOOLS_PRIVATE_API_2, VERSION} = require('@angular/compiler-cli');
-
+import {__NGTOOLS_PRIVATE_API_2, VERSION} from './ngtools_api';
 import {Tapable} from './webpack';
 import {WebpackResourceLoader} from './resource_loader';
 
@@ -21,7 +19,7 @@ export interface ExtractI18nPluginOptions {
 export class ExtractI18nPlugin implements Tapable {
   private _resourceLoader: WebpackResourceLoader;
 
-  private _donePromise: Promise<void>;
+  private _donePromise: Promise<void> | null;
   private _compiler: any = null;
   private _compilation: any = null;
 
@@ -35,9 +33,9 @@ export class ExtractI18nPlugin implements Tapable {
   private _compilerHost: ts.CompilerHost;
   private _program: ts.Program;
 
-  private _i18nFormat: string;
-  private _locale: string;
-  private _outFile: string;
+  private _i18nFormat?: string;
+  private _locale?: string;
+  private _outFile?: string;
 
   constructor(options: ExtractI18nPluginOptions) {
     this._setupOptions(options);
@@ -67,7 +65,7 @@ export class ExtractI18nPlugin implements Tapable {
       throw new Error(`An error happened while parsing ${this._tsConfigPath} JSON: ${err}.`);
     }
     const tsConfig = ts.parseJsonConfigFileContent(
-      tsConfigJson, ts.sys, basePath, null, this._tsConfigPath);
+      tsConfigJson, ts.sys, basePath, undefined, this._tsConfigPath);
 
     let fileNames = tsConfig.fileNames;
     if (options.hasOwnProperty('exclude')) {
@@ -106,10 +104,11 @@ export class ExtractI18nPlugin implements Tapable {
 
     this._compilerOptions = tsConfig.options;
     this._angularCompilerOptions = Object.assign(
+      // kept for compatibility with Angular <v5.0.0-beta.7+
       { genDir },
       this._compilerOptions,
       tsConfig.raw['angularCompilerOptions'],
-      { basePath }
+      { basePath, outDir: genDir }
     );
 
     this._basePath = basePath;
@@ -137,6 +136,8 @@ export class ExtractI18nPlugin implements Tapable {
       }
       this._outFile = options.outFile;
     }
+
+    this._resourceLoader = new WebpackResourceLoader();
   }
 
   apply(compiler: any) {
@@ -165,7 +166,7 @@ export class ExtractI18nPlugin implements Tapable {
 
     this._compilation._ngToolsWebpackXi18nPluginInstance = this;
 
-    this._resourceLoader = new WebpackResourceLoader(compilation);
+    this._resourceLoader.update(compilation);
 
     this._donePromise = Promise.resolve()
       .then(() => {
@@ -175,7 +176,7 @@ export class ExtractI18nPlugin implements Tapable {
           program: this._program,
           host: this._compilerHost,
           angularCompilerOptions: this._angularCompilerOptions,
-          i18nFormat: this._i18nFormat,
+          i18nFormat: this._i18nFormat || '',
           locale: this._locale,
           outFile: this._outFile,
 

@@ -14,6 +14,7 @@ export interface XI18WebpackOptions {
   verbose?: boolean;
   progress?: boolean;
   app?: string;
+  aot?: boolean;
 }
 export class XI18nWebpackConfig extends NgCliWebpackConfig {
 
@@ -24,24 +25,31 @@ export class XI18nWebpackConfig extends NgCliWebpackConfig {
     super({
       target: 'development',
       verbose: extractOptions.verbose,
-      progress: extractOptions.progress
+      progress: extractOptions.progress,
+      locale: extractOptions.locale,
+      i18nOutFormat: extractOptions.i18nFormat,
+      i18nOutFile: extractOptions.outFile,
+      aot: extractOptions.aot
     }, appConfig);
     super.buildConfig();
   }
 
   public buildConfig() {
-    const configPath = CliConfig.configFilePath();
-    const projectRoot = path.dirname(configPath);
+    // The extra extraction config is only needed in Angular 2/4.
+    if (!this.extractOptions.aot) {
+      const configPath = CliConfig.configFilePath();
+      const projectRoot = path.dirname(configPath);
 
-    const extractI18nConfig =
-      getWebpackExtractI18nConfig(projectRoot,
-        this.appConfig,
-        this.extractOptions.genDir,
-        this.extractOptions.i18nFormat,
-        this.extractOptions.locale,
-        this.extractOptions.outFile);
+      const extractI18nConfig =
+        getWebpackExtractI18nConfig(projectRoot,
+          this.appConfig,
+          this.extractOptions.genDir,
+          this.extractOptions.i18nFormat,
+          this.extractOptions.locale,
+          this.extractOptions.outFile);
 
-    this.config = webpackMerge([this.config, extractI18nConfig]);
+      this.config = webpackMerge([this.config, extractI18nConfig]);
+    }
     return this.config;
   }
 }

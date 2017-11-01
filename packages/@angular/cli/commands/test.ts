@@ -1,10 +1,12 @@
-const EmberTestCommand = require('../ember-cli/lib/commands/test');
+const Command = require('../ember-cli/lib/models/command');
 import TestTask from '../tasks/test';
-import {CliConfig} from '../models/config';
+import { CliConfig } from '../models/config';
 import { oneLine } from 'common-tags';
 
 const config = CliConfig.fromProject() || CliConfig.fromGlobal();
-const pollDefault = config.config.defaults && config.config.defaults.poll;
+const testConfigDefaults = config.getPaths('defaults.build', [
+  'progress', 'poll', 'preserveSymlinks'
+]);
 
 export interface TestOptions {
   watch?: boolean;
@@ -19,16 +21,23 @@ export interface TestOptions {
   progress?: boolean;
   config: string;
   poll?: number;
+  environment?: string;
   app?: string;
+  preserveSymlinks?: boolean;
+  forceTsCommonjs?: boolean;
 }
 
 
-const TestCommand = EmberTestCommand.extend({
+const TestCommand = Command.extend({
+  name: 'test',
+  aliases: ['t'],
+  description: 'Run unit tests in existing project.',
+  works: 'insideProject',
+
   availableOptions: [
     {
       name: 'watch',
       type: Boolean,
-      default: true,
       aliases: ['w'],
       description: 'Run build when files change.'
     },
@@ -49,14 +58,13 @@ const TestCommand = EmberTestCommand.extend({
     {
       name: 'single-run',
       type: Boolean,
-      default: false,
       aliases: ['sr'],
       description: 'Run tests a single time.'
     },
     {
       name: 'progress',
       type: Boolean,
-      default: true,
+      default: testConfigDefaults['progress'],
       description: 'Log progress to the console while in progress.'
     },
     {
@@ -94,8 +102,20 @@ const TestCommand = EmberTestCommand.extend({
     {
       name: 'poll',
       type: Number,
-      default: pollDefault,
+      default: testConfigDefaults['poll'],
       description: 'Enable and define the file watching poll time period (milliseconds).'
+    },
+    {
+      name: 'environment',
+      type: String,
+      aliases: ['e'] ,
+      description: 'Defines the build environment.'
+    },
+    {
+      name: 'preserve-symlinks',
+      type: Boolean,
+      description: 'Do not use the real path when resolving modules.',
+      default: testConfigDefaults['preserveSymlinks']
     },
     {
       name: 'app',
@@ -105,16 +125,23 @@ const TestCommand = EmberTestCommand.extend({
     }
   ],
 
-  run: function(commandOptions: TestOptions) {
+  run: function (commandOptions: TestOptions) {
     const testTask = new TestTask({
       ui: this.ui,
       project: this.project
     });
 
-    if (!commandOptions.watch) {
+    if (commandOptions.watch !== undefined && !commandOptions.watch) {
       // if not watching ensure karma is doing a single run
       commandOptions.singleRun = true;
     }
+
+    // Don't force commonjs for code coverage builds, some setups need es2015 for it.
+    // https://github.com/angular/angular-cli/issues/5526
+    if (!commandOptions.codeCoverage) {
+      commandOptions.forceTsCommonjs = true;
+    }
+
     return testTask.run(commandOptions);
   }
 });

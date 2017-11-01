@@ -9,23 +9,24 @@ import { overrideOptions } from '../utilities/override-options';
 const Command = require('../ember-cli/lib/models/command');
 
 const config = CliConfig.fromProject() || CliConfig.fromGlobal();
-const defaultPort = process.env.PORT || config.get('defaults.serve.port');
-const defaultHost = config.get('defaults.serve.host');
-const defaultSsl = config.get('defaults.serve.ssl');
-const defaultSslKey = config.get('defaults.serve.sslKey');
-const defaultSslCert = config.get('defaults.serve.sslCert');
+const serveConfigDefaults = config.getPaths('defaults.serve', [
+  'port', 'host', 'ssl', 'sslKey', 'sslCert', 'proxyConfig'
+]);
+const defaultPort = process.env.PORT || serveConfigDefaults['port'];
 
 export interface ServeTaskOptions extends BuildOptions {
   port?: number;
   host?: string;
   proxyConfig?: string;
   liveReload?: boolean;
-  liveReloadClient?: string;
+  publicHost?: string;
+  disableHostCheck?: boolean;
   ssl?: boolean;
   sslKey?: string;
   sslCert?: string;
   open?: boolean;
   hmr?: boolean;
+  servePath?: string;
 }
 
 // Expose options unrelated to live-reload to other commands that need to run serve
@@ -41,32 +42,33 @@ export const baseServeCommandOptions: any = overrideOptions([
   {
     name: 'host',
     type: String,
-    default: defaultHost,
+    default: serveConfigDefaults['host'],
     aliases: ['H'],
-    description: `Listens only on ${defaultHost} by default.`
+    description: `Listens only on ${serveConfigDefaults['host']} by default.`
   },
   {
     name: 'proxy-config',
     type: 'Path',
+    default: serveConfigDefaults['proxyConfig'],
     aliases: ['pc'],
     description: 'Proxy configuration file.'
   },
   {
     name: 'ssl',
     type: Boolean,
-    default: defaultSsl,
+    default: serveConfigDefaults['ssl'],
     description: 'Serve using HTTPS.'
   },
   {
     name: 'ssl-key',
     type: String,
-    default: defaultSslKey,
+    default: serveConfigDefaults['sslKey'],
     description: 'SSL key to use for serving HTTPS.'
   },
   {
     name: 'ssl-cert',
     type: String,
-    default: defaultSslCert,
+    default: serveConfigDefaults['sslCert'],
     description: 'SSL certificate to use for serving HTTPS.'
   },
   {
@@ -84,9 +86,21 @@ export const baseServeCommandOptions: any = overrideOptions([
     description: 'Whether to reload the page on change, using live-reload.'
   },
   {
-    name: 'live-reload-client',
+    name: 'public-host',
     type: String,
-    description: 'Specify the URL that the live reload browser client will use.'
+    aliases: ['live-reload-client'],
+    description: 'Specify the URL that the browser client will use.'
+  },
+  {
+    name: 'disable-host-check',
+    type: Boolean,
+    default: false,
+    description: 'Don\'t verify connected clients are part of allowed hosts.',
+  },
+  {
+    name: 'serve-path',
+    type: String,
+    description: 'The pathname where the app will be served.'
   },
   {
     name: 'hmr',
@@ -112,7 +126,18 @@ const ServeCommand = Command.extend({
   run: function (commandOptions: ServeTaskOptions) {
     const ServeTask = require('../tasks/serve').default;
 
+    // Check Angular and TypeScript versions.
     Version.assertAngularVersionIs2_3_1OrHigher(this.project.root);
+    Version.assertTypescriptVersion(this.project.root);
+
+    // Force commonjs module format for TS on dev builds.
+    if (commandOptions.target === 'development') {
+      commandOptions.forceTsCommonjs = true;
+    }
+
+    // Default evalSourcemaps to true for serve. This makes rebuilds faster.
+    commandOptions.evalSourcemaps = true;
+
     return checkPort(commandOptions.port, commandOptions.host, defaultPort)
       .then(port => {
         commandOptions.port = port;

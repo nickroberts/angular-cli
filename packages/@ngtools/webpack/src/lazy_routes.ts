@@ -4,7 +4,7 @@ import * as ts from 'typescript';
 import {TypeScriptFileRefactor} from './refactor';
 
 
-function _getContentOfKeyLiteral(_source: ts.SourceFile, node: ts.Node): string {
+function _getContentOfKeyLiteral(_source: ts.SourceFile, node: ts.Node): string | null {
   if (node.kind == ts.SyntaxKind.Identifier) {
     return (node as ts.Identifier).text;
   } else if (node.kind == ts.SyntaxKind.StringLiteral) {
@@ -16,13 +16,14 @@ function _getContentOfKeyLiteral(_source: ts.SourceFile, node: ts.Node): string 
 
 
 export interface LazyRouteMap {
-  [path: string]: string;
+  [path: string]: string | null;
 }
 
 
 export function findLazyRoutes(filePath: string,
-                               program: ts.Program,
-                               host: ts.CompilerHost): LazyRouteMap {
+                               host: ts.CompilerHost,
+                               program?: ts.Program,
+                               compilerOptions?: ts.CompilerOptions): LazyRouteMap {
   const refactor = new TypeScriptFileRefactor(filePath, host, program);
 
   return refactor
@@ -46,11 +47,12 @@ export function findLazyRoutes(filePath: string,
     // does not exist.
     .map((routePath: string) => {
       const moduleName = routePath.split('#')[0];
+      const compOptions = program ? program.getCompilerOptions() : compilerOptions;
       const resolvedModuleName: ts.ResolvedModuleWithFailedLookupLocations = moduleName[0] == '.'
         ? ({
             resolvedModule: { resolvedFileName: join(dirname(filePath), moduleName) + '.ts' }
           } as any)
-        : ts.resolveModuleName(moduleName, filePath, program.getCompilerOptions(), host);
+        : ts.resolveModuleName(moduleName, filePath, compOptions, host);
       if (resolvedModuleName.resolvedModule
           && resolvedModuleName.resolvedModule.resolvedFileName
           && host.fileExists(resolvedModuleName.resolvedModule.resolvedFileName)) {

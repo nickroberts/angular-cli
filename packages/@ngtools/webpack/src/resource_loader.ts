@@ -1,4 +1,3 @@
-import {readFileSync} from 'fs';
 import * as vm from 'vm';
 import * as path from 'path';
 
@@ -8,16 +7,35 @@ const LoaderTargetPlugin = require('webpack/lib/LoaderTargetPlugin');
 const SingleEntryPlugin = require('webpack/lib/SingleEntryPlugin');
 
 
+interface CompilationOutput {
+  outputName: string;
+  source: string;
+}
 
 export class WebpackResourceLoader {
+  private _parentCompilation: any;
   private _context: string;
   private _uniqueId = 0;
+  private _resourceDependencies = new Map<string, string[]>();
 
-  constructor(private _parentCompilation: any) {
-    this._context = _parentCompilation.context;
+  constructor() {}
+
+  update(parentCompilation: any) {
+    this._parentCompilation = parentCompilation;
+    this._context = parentCompilation.context;
+    this._uniqueId = 0;
   }
 
-  private _compile(filePath: string, _content: string): Promise<any> {
+  getResourceDependencies(filePath: string) {
+    return this._resourceDependencies.get(filePath) || [];
+  }
+
+  private _compile(filePath: string): Promise<CompilationOutput> {
+
+    if (!this._parentCompilation) {
+      throw new Error('WebpackResourceLoader cannot be used without parentCompilation');
+    }
+
     const compilerName = `compiler(${this._uniqueId++})`;
     const outputOptions = { filename: filePath };
     const relativePath = path.relative(this._context || '', filePath);
@@ -63,9 +81,9 @@ export class WebpackResourceLoader {
           // Replace [hash] placeholders in filename
           const outputName = this._parentCompilation.mainTemplate.applyPluginsWaterfall(
             'asset-path', outputOptions.filename, {
-            hash: childCompilation.hash,
-            chunk: entries[0]
-          });
+              hash: childCompilation.hash,
+              chunk: entries[0]
+            });
 
           // Restore the parent compilation to the state like it was before the child compilation.
           Object.keys(childCompilation.assets).forEach((fileName) => {
@@ -78,40 +96,42 @@ export class WebpackResourceLoader {
             }
           });
 
+          // Save the dependencies for this resource.
+          this._resourceDependencies.set(outputName, childCompilation.fileDependencies);
+
           resolve({
-            // Hash of the template entry point.
-            hash: entries[0].hash,
             // Output name.
-            outputName: outputName,
+            outputName,
             // Compiled code.
-            content: childCompilation.assets[outputName].source()
+            source: childCompilation.assets[outputName].source()
           });
         }
       });
     });
   }
 
-  private _evaluate(fileName: string, source: string): Promise<string> {
+  private _evaluate(output: CompilationOutput): Promise<string> {
     try {
-      const vmContext = vm.createContext(Object.assign({require: require}, global));
-      const vmScript = new vm.Script(source, {filename: fileName});
+      const outputName = output.outputName;
+      const vmContext = vm.createContext(Object.assign({ require: require }, global));
+      const vmScript = new vm.Script(output.source, { filename: outputName });
 
       // Evaluate code and cast to string
-      let newSource: string;
-      newSource = vmScript.runInContext(vmContext);
+      let evaluatedSource: string;
+      evaluatedSource = vmScript.runInContext(vmContext);
 
-      if (typeof newSource == 'string') {
-        return Promise.resolve(newSource);
+      if (typeof evaluatedSource == 'string') {
+        return Promise.resolve(evaluatedSource);
       }
 
-      return Promise.reject('The loader "' + fileName + '" didn\'t return a string.');
+      return Promise.reject('The loader "' + outputName + '" didn\'t return a string.');
     } catch (e) {
       return Promise.reject(e);
     }
   }
 
   get(filePath: string): Promise<string> {
-    return this._compile(filePath, readFileSync(filePath, 'utf8'))
-      .then((result: any) => this._evaluate(result.outputName, result.content));
+    return this._compile(filePath)
+      .then((result: CompilationOutput) => this._evaluate(result));
   }
 }

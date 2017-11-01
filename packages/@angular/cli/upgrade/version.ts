@@ -1,14 +1,17 @@
-import {SemVer} from 'semver';
-import {bold, red, yellow} from 'chalk';
-import {stripIndents} from 'common-tags';
+import {SemVer, satisfies} from 'semver';
+import chalk from 'chalk';
+import {stripIndents, stripIndent} from 'common-tags';
 import {readFileSync, existsSync} from 'fs';
 import * as path from 'path';
 
 import {CliConfig} from '../models/config';
 import {findUp} from '../utilities/find-up';
+import {requireProjectModule} from '../utilities/require-project-module';
 
 const resolve = require('resolve');
 
+
+const { bold, red, yellow } = chalk;
 
 function _hasOldCliBuildFile() {
   return existsSync(findUp('angular-cli-build.js', process.cwd()))
@@ -83,10 +86,15 @@ export class Version {
   }
 
   static assertAngularVersionIs2_3_1OrHigher(projectRoot: string) {
-    const angularCorePath = path.join(projectRoot, 'node_modules/@angular/core');
-    const pkgJson = existsSync(angularCorePath)
-      ? JSON.parse(readFileSync(path.join(angularCorePath, 'package.json'), 'utf8'))
-      : null;
+    let pkgJson;
+    try {
+      pkgJson = requireProjectModule(projectRoot, '@angular/core/package.json');
+    } catch (_) {
+      console.error(bold(red(stripIndents`
+        You seem to not be depending on "@angular/core". This is an error.
+      `)));
+      process.exit(2);
+    }
 
     // Just check @angular/core.
     if (pkgJson && pkgJson['version']) {
@@ -134,6 +142,51 @@ export class Version {
           It will be ignored.
         ` + '\n')));
       }
+    }
+  }
+
+  static assertTypescriptVersion(projectRoot: string) {
+    const config = CliConfig.fromProject() || CliConfig.fromGlobal();
+    if (!config.get('warnings.typescriptMismatch')) {
+      return;
+    }
+    let compilerVersion: string, tsVersion: string;
+    try {
+      compilerVersion = requireProjectModule(projectRoot, '@angular/compiler-cli').VERSION.full;
+      tsVersion = requireProjectModule(projectRoot, 'typescript').version;
+    } catch (_) {
+      console.error(bold(red(stripIndents`
+        Versions of @angular/compiler-cli and typescript could not be determined.
+        The most common reason for this is a broken npm install.
+
+        Please make sure your package.json contains both @angular/compiler-cli and typescript in
+        devDependencies, then delete node_modules and package-lock.json (if you have one) and
+        run npm install again.
+      `)));
+      process.exit(2);
+    }
+
+    const versionCombos = [
+      { compiler: '>=2.3.1 <3.0.0', typescript: '>=2.0.2 <2.3.0' },
+      { compiler: '>=4.0.0 <5.0.0', typescript: '>=2.1.0 <2.4.0' },
+      { compiler: '>=5.0.0 <6.0.0', typescript: '>=2.4.2 <2.5.0' }
+    ];
+
+    const currentCombo = versionCombos.find((combo) => satisfies(compilerVersion, combo.compiler));
+
+    if (currentCombo && !satisfies(tsVersion, currentCombo.typescript)) {
+      // First line of warning looks weird being split in two, disable tslint for it.
+      console.log((yellow('\n' + stripIndent`
+        @angular/compiler-cli@${compilerVersion} requires typescript@'${
+          currentCombo.typescript}' but ${tsVersion} was found instead.
+        Using this version can result in undefined behaviour and difficult to debug problems.
+
+        Please run the following command to install a compatible version of TypeScript.
+
+            npm install typescript@'${currentCombo.typescript}'
+
+        To disable this warning run "ng set warnings.typescriptMismatch=false".
+      ` + '\n')));
     }
   }
 

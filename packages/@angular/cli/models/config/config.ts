@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as ts from 'typescript';
+import { stripIndent } from 'common-tags';
 
 import {SchemaClass, SchemaClassFactory} from '@ngtools/json-schema';
+
+import { stripBom } from '../../utilities/strip-bom';
 
 
 const DEFAULT_CONFIG_SCHEMA_PATH = path.join(__dirname, '../../lib/config/schema.json');
@@ -29,7 +31,7 @@ export class CliConfig<JsonType> {
   get config(): JsonType { return <any>this._config; }
 
   save(path: string = this._configPath) {
-    return fs.writeFileSync(path, this.serialize(), 'utf-8');
+    return fs.writeFileSync(path, this.serialize(), {encoding: 'utf-8'});
   }
   serialize(mimetype = 'application/json'): string {
     return this._config.$$serialize(mimetype);
@@ -39,7 +41,10 @@ export class CliConfig<JsonType> {
     return this._config.$$alias(path, newPath);
   }
 
-  get(jsonPath: string) {
+  get(jsonPath?: string) {
+    if (!jsonPath) {
+      return this._config.$$root();
+    }
     return this._config.$$get(jsonPath);
   }
 
@@ -57,6 +62,12 @@ export class CliConfig<JsonType> {
     this._config.$$set(jsonPath, value);
   }
 
+  getPaths(baseJsonPath: string, keys: string[]) {
+    const ret: { [k: string]: any } = {};
+    keys.forEach(key => ret[key] = this.get(`${baseJsonPath}.${key}`));
+    return ret;
+  }
+
   static fromJson<ConfigType>(content: ConfigType, ...global: ConfigType[]) {
     const schemaContent = fs.readFileSync(DEFAULT_CONFIG_SCHEMA_PATH, 'utf-8');
     let schema: Object;
@@ -70,15 +81,22 @@ export class CliConfig<JsonType> {
   }
 
   static fromConfigPath<T>(configPath: string, otherPath: string[] = []): CliConfig<T> {
-    const configContent = fs.existsSync(configPath)
-      ? ts.sys.readFile(configPath)
-      : '{}';
     const schemaContent = fs.readFileSync(DEFAULT_CONFIG_SCHEMA_PATH, 'utf-8');
+    let configContent = '{}';
+    if (fs.existsSync(configPath)) {
+      configContent = stripBom(fs.readFileSync(configPath, 'utf-8') || '{}');
+    }
+
 
     let otherContents = new Array<string>();
     if (configPath !== otherPath[0]) {
       otherContents = otherPath
-        .map(path => fs.existsSync(path) && ts.sys.readFile(path))
+        .map(path => {
+          if (fs.existsSync(path)) {
+            return stripBom(fs.readFileSync(path, 'utf-8'));
+          }
+          return undefined;
+        })
         .filter(content => !!content);
     }
 
@@ -89,18 +107,28 @@ export class CliConfig<JsonType> {
     try {
       content = JSON.parse(configContent);
     } catch (err) {
-      throw new InvalidConfigError(
-        'Parsing .angular-cli.json failed. Please make sure your .angular-cli.json'
-        + ' is valid JSON. Error:\n' + err
-      );
+      throw new InvalidConfigError(stripIndent`
+        Parsing '${configPath}' failed. Ensure the file is valid JSON.
+        Error: ${err.message}
+      `);
     }
+
+    others = otherContents.map(otherContent => {
+      try {
+        return JSON.parse(otherContent);
+      } catch (err) {
+        throw new InvalidConfigError(stripIndent`
+          Parsing '${configPath}' failed. Ensure the file is valid JSON.
+          Error: ${err.message}
+        `);
+      }
+    });
 
     try {
       schema = JSON.parse(schemaContent);
-      others = otherContents.map(otherContent => JSON.parse(otherContent));
     } catch (err) {
       throw new InvalidConfigError(
-        `Parsing Angular CLI schema or other configuration files failed. Error:\n${err}`
+        `Parsing Angular CLI schema failed. Error:\n${err.message}`
       );
     }
 

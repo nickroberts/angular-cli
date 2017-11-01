@@ -1,34 +1,39 @@
+import { join } from 'path';
 import * as webpack from 'webpack';
-import * as path from 'path';
-import * as rimraf from 'rimraf';
+import { AngularCompilerPlugin } from '@ngtools/webpack';
+import { XI18nWebpackConfig } from '../models/webpack-xi18n-config';
+import { getAppFromConfig } from '../utilities/app-utils';
 
 const Task = require('../ember-cli/lib/models/task');
+const MemoryFS = require('memory-fs');
 
-import {XI18nWebpackConfig} from '../models/webpack-xi18n-config';
-import {getAppFromConfig} from '../utilities/app-utils';
 
 export const Extracti18nTask = Task.extend({
   run: function (runTaskOptions: any) {
-
-    const project = this.project;
-
     const appConfig = getAppFromConfig(runTaskOptions.app);
+    const useExperimentalAngularCompiler = AngularCompilerPlugin.isSupported();
 
-    const buildDir = '.tmp';
-    const genDir = runTaskOptions.outputPath || appConfig.root;
+    // We need to determine the outFile name so that AngularCompiler can retrieve it.
+    let outFile = runTaskOptions.outFile || getI18nOutfile(runTaskOptions.i18nFormat);
+    if (useExperimentalAngularCompiler && runTaskOptions.outputPath) {
+      // AngularCompilerPlugin doesn't support genDir so we have to adjust outFile instead.
+      outFile = join(runTaskOptions.outputPath, outFile);
+    }
 
     const config = new XI18nWebpackConfig({
-      genDir,
-      buildDir,
+      genDir: runTaskOptions.outputPath || appConfig.root,
+      buildDir: '.tmp',
       i18nFormat: runTaskOptions.i18nFormat,
       locale: runTaskOptions.locale,
-      outFile: runTaskOptions.outFile,
+      outFile: outFile,
       verbose: runTaskOptions.verbose,
       progress: runTaskOptions.progress,
       app: runTaskOptions.app,
+      aot: useExperimentalAngularCompiler,
     }, appConfig).buildConfig();
 
     const webpackCompiler = webpack(config);
+    webpackCompiler.outputFileSystem = new MemoryFS();
 
     return new Promise((resolve, reject) => {
       const callback: webpack.compiler.CompilerCallback = (err, stats) => {
@@ -45,15 +50,26 @@ export const Extracti18nTask = Task.extend({
 
       webpackCompiler.run(callback);
     })
-      .then(() => {
-        // Deletes temporary build folder
-        rimraf.sync(path.resolve(project.root, buildDir));
-      })
-      .catch((err: Error) => {
-        if (err) {
-          this.ui.writeError('\nAn error occured during the i18n extraction:\n'
-            + ((err && err.stack) || err));
-        }
-      });
+    .catch((err: Error) => {
+      if (err) {
+        this.ui.writeError('\nAn error occured during the i18n extraction:\n'
+          + ((err && err.stack) || err));
+      }
+    });
   }
 });
+
+function getI18nOutfile(format: string) {
+  switch (format) {
+    case 'xmb':
+      return 'messages.xmb';
+    case 'xlf':
+    case 'xlif':
+    case 'xliff':
+    case 'xlf2':
+    case 'xliff2':
+      return 'messages.xlf';
+    default:
+      throw new Error(`Unsupported format "${format}"`);
+  }
+}

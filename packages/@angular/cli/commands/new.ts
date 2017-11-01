@@ -1,21 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as chalk from 'chalk';
-import denodeify = require('denodeify');
+import chalk from 'chalk';
 
-import InitCommand from './init';
 import { CliConfig } from '../models/config';
 import { validateProjectName } from '../utilities/validate-project-name';
 import { oneLine } from 'common-tags';
+import { SchematicAvailableOptions } from '../tasks/schematic-get-options';
 
 const Command = require('../ember-cli/lib/models/command');
-const Project = require('../ember-cli/lib/models/project');
 const SilentError = require('silent-error');
-const mkdir = denodeify(fs.mkdir);
-
 
 const NewCommand = Command.extend({
   name: 'new',
+  aliases: ['n'],
   description: `Creates a new directory and a new Angular app eg. "ng new [name]".`,
   works: 'outsideProject',
 
@@ -25,7 +22,10 @@ const NewCommand = Command.extend({
       type: Boolean,
       default: false,
       aliases: ['d'],
-      description: 'Run through without making any changes.'
+      description: oneLine`
+        Run through without making any changes.
+        Will list all files that would have been created when running "ng new".
+      `
     },
     {
       name: 'verbose',
@@ -39,7 +39,8 @@ const NewCommand = Command.extend({
       type: Boolean,
       default: false,
       aliases: ['lc'],
-      description: 'Automatically link the `@angular/cli` package.'
+      description: 'Automatically link the `@angular/cli` package.',
+      hidden: true
     },
     {
       name: 'skip-install',
@@ -49,27 +50,6 @@ const NewCommand = Command.extend({
       description: 'Skip installing packages.'
     },
     {
-      name: 'skip-git',
-      type: Boolean,
-      default: false,
-      aliases: ['sg'],
-      description: 'Skip initializing a git repository.'
-    },
-    {
-      name: 'skip-tests',
-      type: Boolean,
-      default: false,
-      aliases: ['st'],
-      description: 'Skip creating spec files.'
-    },
-    {
-      name: 'skip-e2e',
-      type: Boolean,
-      default: false,
-      aliases: ['s2'],
-      description: 'Skip creating e2e files.'
-    },
-    {
       name: 'skip-commit',
       type: Boolean,
       default: false,
@@ -77,55 +57,57 @@ const NewCommand = Command.extend({
       description: 'Skip committing the first commit to git.'
     },
     {
-      name: 'directory',
+      name: 'collection',
       type: String,
-      aliases: ['dir'],
-      description: 'The directory name to create the app in.'
-    },
-    {
-      name: 'source-dir',
-      type: String,
-      default: 'src',
-      aliases: ['sd'],
-      description: 'The name of the source directory.'
-    },
-    {
-      name: 'style',
-      type: String,
-      default: 'css',
-      description: 'The style file default extension.'
-    },
-    {
-      name: 'prefix',
-      type: String,
-      default: 'app',
-      aliases: ['p'],
-      description: 'The prefix to use for all component selectors.'
-    },
-    {
-      name: 'routing',
-      type: Boolean,
-      default: false,
-      description: 'Generate a routing module.'
-    },
-    {
-      name: 'inline-style',
-      type: Boolean,
-      default: false,
-      aliases: ['is'],
-      description: 'Should have an inline style.'
-    },
-    {
-      name: 'inline-template',
-      type: Boolean,
-      default: false,
-      aliases: ['it'],
-      description: 'Should have an inline template.'
-     }
+      aliases: ['c'],
+      description: 'Schematics collection to use.'
+    }
   ],
 
   isProject: function (projectPath: string) {
     return CliConfig.fromProject(projectPath) !== null;
+  },
+
+  getCollectionName(rawArgs: string[]) {
+    let collectionName = CliConfig.fromGlobal().get('defaults.schematics.collection');
+    if (rawArgs) {
+      const parsedArgs = this.parseArgs(rawArgs, false);
+      if (parsedArgs.options.collection) {
+        collectionName = parsedArgs.options.collection;
+      }
+    }
+    return collectionName;
+  },
+
+  beforeRun: function (rawArgs: string[]) {
+    const isHelp = ['--help', '-h'].includes(rawArgs[0]);
+    if (isHelp) {
+      return;
+    }
+
+    const schematicName = CliConfig.getValue('defaults.schematics.newApp');
+
+    if (/^\d/.test(rawArgs[1])) {
+      SilentError.debugOrThrow('@angular/cli/commands/generate',
+        `The \`ng new ${rawArgs[0]}\` file name cannot begin with a digit.`);
+    }
+
+    const SchematicGetOptionsTask = require('../tasks/schematic-get-options').default;
+
+    const getOptionsTask = new SchematicGetOptionsTask({
+      ui: this.ui,
+      project: this.project
+    });
+
+    return getOptionsTask.run({
+      schematicName,
+      collectionName: this.getCollectionName(rawArgs)
+    })
+      .then((availableOptions: SchematicAvailableOptions) => {
+        this.registerOptions({
+          availableOptions: availableOptions
+        });
+      });
   },
 
   run: function (commandOptions: any, rawArgs: string[]) {
@@ -144,43 +126,33 @@ const NewCommand = Command.extend({
       commandOptions.skipGit = true;
     }
 
-    const directoryName = path.join(process.cwd(),
-      commandOptions.directory ? commandOptions.directory : packageName);
+    commandOptions.directory = commandOptions.directory || packageName;
+    const directoryName = path.join(process.cwd(), commandOptions.directory);
 
-    const initCommand = new InitCommand({
-      ui: this.ui,
-      tasks: this.tasks,
-      project: Project.nullProject(this.ui, this.cli)
-    });
-
-    let createDirectory;
-    if (commandOptions.dryRun) {
-      createDirectory = Promise.resolve()
-        .then(() => {
-          if (fs.existsSync(directoryName) && this.isProject(directoryName)) {
-            throw new SilentError(oneLine`
-              Directory ${directoryName} exists and is already an Angular CLI project.
-            `);
-          }
-        });
-    } else {
-      createDirectory = mkdir(directoryName)
-        .catch(err => {
-          if (err.code === 'EEXIST') {
-            if (this.isProject(directoryName)) {
-              throw new SilentError(oneLine`
-                Directory ${directoryName} exists and is already an Angular CLI project.
-              `);
-            }
-          } else {
-            throw err;
-          }
-        })
-        .then(() => process.chdir(directoryName));
+    if (fs.existsSync(directoryName) && this.isProject(directoryName)) {
+      throw new SilentError(oneLine`
+        Directory ${directoryName} exists and is already an Angular CLI project.
+      `);
     }
 
-    return createDirectory
-      .then(initCommand.run.bind(initCommand, commandOptions, rawArgs));
+    if (commandOptions.collection) {
+      commandOptions.collectionName = commandOptions.collection;
+    } else {
+      commandOptions.collectionName = this.getCollectionName(rawArgs);
+    }
+
+    const InitTask = require('../tasks/init').default;
+
+    const initTask = new InitTask({
+      project: this.project,
+      tasks: this.tasks,
+      ui: this.ui,
+    });
+
+    // Ensure skipGit has a boolean value.
+    commandOptions.skipGit = commandOptions.skipGit === undefined ? false : commandOptions.skipGit;
+
+    return initTask.run(commandOptions, rawArgs);
   }
 });
 

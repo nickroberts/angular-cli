@@ -4,6 +4,7 @@ import { stripIndents } from 'common-tags';
 import { E2eTaskOptions } from '../commands/e2e';
 import { CliConfig } from '../models/config';
 import { requireProjectModule } from '../utilities/require-project-module';
+import { getAppFromConfig } from '../utilities/app-utils';
 
 const Task = require('../ember-cli/lib/models/task');
 const SilentError = require('silent-error');
@@ -14,9 +15,13 @@ export const E2eTask = Task.extend({
     const projectConfig = CliConfig.fromProject().config;
     const projectRoot = this.project.root;
     const protractorLauncher = requireProjectModule(projectRoot, 'protractor/built/launcher');
+    const appConfig = getAppFromConfig(e2eTaskOptions.app);
 
     if (projectConfig.project && projectConfig.project.ejected) {
       throw new SilentError('An ejected project cannot use the build command anymore.');
+    }
+    if (appConfig.platform === 'server') {
+      throw new SilentError('ng test for platform server applications is coming soon!');
     }
 
     return new Promise(function () {
@@ -26,7 +31,15 @@ export const E2eTask = Task.extend({
       };
 
       // use serve url as override for protractors baseUrl
-      if (e2eTaskOptions.serve) {
+      if (e2eTaskOptions.serve && e2eTaskOptions.publicHost) {
+        let publicHost = e2eTaskOptions.publicHost;
+        if (!/^\w+:\/\//.test(publicHost)) {
+          publicHost = `${e2eTaskOptions.ssl ? 'https' : 'http'}://${publicHost}`;
+        }
+        const clientUrl = url.parse(publicHost);
+        e2eTaskOptions.publicHost = clientUrl.host;
+        additionalProtractorConfig.baseUrl = url.format(clientUrl);
+      } else if (e2eTaskOptions.serve) {
         additionalProtractorConfig.baseUrl = url.format({
           protocol: e2eTaskOptions.ssl ? 'https' : 'http',
           hostname: e2eTaskOptions.host,
@@ -34,6 +47,12 @@ export const E2eTask = Task.extend({
         });
       } else if (e2eTaskOptions.baseHref) {
         additionalProtractorConfig.baseUrl = e2eTaskOptions.baseHref;
+      } else if (e2eTaskOptions.port) {
+        additionalProtractorConfig.baseUrl = url.format({
+          protocol: e2eTaskOptions.ssl ? 'https' : 'http',
+          hostname: e2eTaskOptions.host,
+          port: e2eTaskOptions.port.toString()
+        });
       }
 
       if (e2eTaskOptions.specs.length !== 0) {

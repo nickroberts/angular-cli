@@ -1,32 +1,22 @@
-// @ignoreDep @angular/compiler-cli
-import * as path from 'path';
+// @ignoreDep typescript
+import { satisfies } from 'semver';
 
-let version;
-
-// Check that Angular is available.
+// Test if typescript is available. This is a hack. We should be using peerDependencies instead
+// but can't until we split global and local packages.
+// See https://github.com/angular/angular-cli/issues/8107#issuecomment-338185872
 try {
-  version = require('@angular/compiler-cli').VERSION;
+  const version = require('typescript').version;
+  if (!satisfies(version, '^2.0.2')) {
+    throw new Error();
+  }
 } catch (e) {
-  throw new Error('The "@angular/compiler-cli" package was not properly installed.');
-}
-
-// Check that Angular is also not part of this module's node_modules (it should be the project's).
-const compilerCliPath = require.resolve('@angular/compiler-cli');
-if (compilerCliPath.startsWith(path.dirname(__dirname))) {
-  throw new Error('The @ngtools/webpack plugin now relies on the project @angular/compiler-cli. '
-                + 'Please clean your node_modules and reinstall.');
-}
-
-// Throw if we're neither 2.3.1 or more, nor 4.x.y.
-if (!(   version.major == '4'
-      || (version.major == '2'
-          && (   version.minor == '4'
-              || version.minor == '3' && version.patch == '1')))) {
-  throw new Error('Version of @angular/compiler-cli needs to be 2.3.1 or greater. '
-                + `Current version is "${version.full}".`);
+  throw new Error('Could not find local "typescript" package.'
+    + 'The "@ngtools/webpack" package requires a local "typescript@^2.0.2" package to be installed.'
+    + e);
 }
 
 export * from './plugin';
+export * from './angular_compiler_plugin';
 export * from './extract_i18n_plugin';
-export {ngcLoader as default} from './loader';
-export {PathsPlugin} from './paths-plugin';
+export { ngcLoader as default } from './loader';
+export { PathsPlugin } from './paths-plugin';

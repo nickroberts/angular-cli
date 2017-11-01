@@ -1,10 +1,17 @@
 import { ng } from '../../utils/process';
 import { expectFileToMatch, writeMultipleFiles } from '../../utils/fs';
 import { updateJsonFile } from '../../utils/project';
+import { getGlobalVariable } from '../../utils/env';
 import { stripIndents } from 'common-tags';
 
 
 export default function () {
+  // Skip this in Appveyor tests.
+  if (getGlobalVariable('argv').appveyor) {
+    return Promise.resolve();
+  }
+
+
   return Promise.resolve()
     .then(() => writeMultipleFiles({
       'src/styles.css': 'div { background: url("./assets/more.svg"); }',
@@ -17,6 +24,8 @@ export default function () {
     .then(() => expectFileToMatch('dist/index.html', 'deployUrl/main.bundle.js'))
     // verify --deploy-url isn't applied to extracted css urls
     .then(() => expectFileToMatch('dist/styles.bundle.css', /url\(more\.[0-9a-f]{20}\.svg\)/))
+    .then(() => ng('build', '--deploy-url=http://example.com/some/path/', '--extract-css'))
+    .then(() => expectFileToMatch('dist/index.html', 'http://example.com/some/path/main.bundle.js'))
     // verify option also works in config
     .then(() => updateJsonFile('.angular-cli.json', configJson => {
       const app = configJson['apps'][0];

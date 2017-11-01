@@ -7,6 +7,7 @@ import {
   writeMultipleFiles
 } from '../../utils/fs';
 import { expectToFail } from '../../utils/utils';
+import { getGlobalVariable } from '../../utils/env';
 
 const imgSvg = `
   <svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
@@ -15,6 +16,11 @@ const imgSvg = `
 `;
 
 export default function () {
+  // Skip this in Appveyor tests.
+  if (getGlobalVariable('argv').appveyor) {
+    return Promise.resolve();
+  }
+
   return Promise.resolve()
     // Verify absolute/relative paths in global/component css.
     .then(() => writeMultipleFiles({
@@ -34,14 +40,13 @@ export default function () {
     }))
     .then(() => ng('build', '--extract-css', '--aot'))
     // Check paths are correctly generated.
+    .then(() => expectFileToMatch('dist/styles.bundle.css', '/assets/global-img-absolute.svg'))
     .then(() => expectFileToMatch('dist/styles.bundle.css',
-      /url\('\/assets\/global-img-absolute\.svg'\)/))
-    .then(() => expectFileToMatch('dist/styles.bundle.css',
-      /url\(global-img-relative\.[0-9a-f]{20}\.svg\)/))
+      /global-img-relative\.[0-9a-f]{20}\.svg/))
     .then(() => expectFileToMatch('dist/main.bundle.js',
-      /url\(\\'\/assets\/component-img-absolute\.svg\\'\)/))
+      '/assets/component-img-absolute.svg'))
     .then(() => expectFileToMatch('dist/main.bundle.js',
-      /url\(component-img-relative\.[0-9a-f]{20}\.svg\)/))
+      /component-img-relative\.[0-9a-f]{20}\.svg/))
     // Check files are correctly created.
     .then(() => expectToFail(() => expectFileToExist('dist/global-img-absolute.svg')))
     .then(() => expectToFail(() => expectFileToExist('dist/component-img-absolute.svg')))
@@ -72,11 +77,11 @@ export default function () {
     .then(() => ng('build', '--base-href=/base/', '--deploy-url=deploy/',
       '--extract-css', '--aot'))
     .then(() => expectFileToMatch('dist/styles.bundle.css',
-      /url\('\/base\/deploy\/assets\/global-img-absolute\.svg'\)/))
+      '/base/deploy/assets/global-img-absolute.svg'))
     .then(() => expectFileToMatch('dist/styles.bundle.css',
-      /url\(global-img-relative\.[0-9a-f]{20}\.svg\)/))
+      /global-img-relative\.[0-9a-f]{20}\.svg/))
     .then(() => expectFileToMatch('dist/main.bundle.js',
-      /url\(\\'\/base\/deploy\/assets\/component-img-absolute\.svg\\'\)/))
+      '/base/deploy/assets/component-img-absolute.svg'))
     .then(() => expectFileToMatch('dist/main.bundle.js',
-      /url\(deploy\/component-img-relative\.[0-9a-f]{20}\.svg\)/));
+      /deploy\/component-img-relative\.[0-9a-f]{20}\.svg/));
 }

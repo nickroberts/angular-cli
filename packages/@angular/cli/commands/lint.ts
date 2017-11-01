@@ -1,4 +1,5 @@
-import {oneLine} from 'common-tags';
+import { oneLine } from 'common-tags';
+import { CliConfig } from '../models/config';
 
 const Command = require('../ember-cli/lib/models/command');
 
@@ -36,7 +37,7 @@ export default Command.extend({
     },
     {
       name: 'format',
-      alias: 't',
+      aliases: ['t'],
       type: String,
       default: 'prose',
       description: oneLine`
@@ -52,6 +53,9 @@ export default Command.extend({
       project: this.project
     });
 
-    return lintTask.run(commandOptions);
+    return lintTask.run({
+      ...commandOptions,
+      configs: CliConfig.fromProject().config.lint
+    });
   }
 });

@@ -13,6 +13,10 @@ ng build
 
 The build artifacts will be stored in the `dist/` directory.
 
+All commands that build or serve your project, `ng build/serve/e2e`, will delete the output
+directory (`dist/` by default).
+This can be disabled via the `--no-delete-output-path` (or `--delete-output-path=false`) flag.
+
 ### Build Targets and Environment Files
 
 `ng build` can specify both a build target (`--target=production` or `--target=development`) and an
@@ -59,10 +63,53 @@ ng build --base-href /myUrl/
 ng build --bh /myUrl/
 ```
 
-### Bundling
+### Bundling & Tree-Shaking
 
-All builds make use of bundling, and using the `--prod` flag in  `ng build --prod`
-or `ng serve --prod` will also make use of uglifying and tree-shaking functionality.
+All builds make use of bundling and limited tree-shaking, while `--prod` builds also run limited
+dead code elimination via UglifyJS.
+
+### `--dev` vs `--prod` builds
+
+Both `--dev`/`--target=development` and `--prod`/`--target=production` are 'meta' flags, that set other flags.
+If you do not specify either you will get the `--dev` defaults.
+
+Flag                | `--dev` | `--prod`
+---                 | ---     | ---
+`--aot`             | `false` | `true`
+`--environment`     | `dev`   | `prod`
+`--output-hashing`  | `media` | `all`
+`--sourcemaps`      | `true`  | `false`
+`--extract-css`     | `false` | `true`
+`--named-chunks`    | `true`  | `false`
+`--build-optimizer` | `false` | `true` with AOT and Angular 5
+
+`--extract-licenses` Extract all licenses in a separate file, in the case of production builds only.
+`--i18n-file` Localization file to use for i18n.
+`--prod` also sets the following non-flaggable settings:
+- Adds service worker if configured in `.angular-cli.json`.
+- Replaces `process.env.NODE_ENV` in modules with the `production` value (this is needed for some libraries, like react).
+- Runs UglifyJS on the code.
+
+### CSS resources
+
+Resources in CSS, such as images and fonts, will be copied over automatically as part of a build.
+If a resource is less than 10kb it will also be inlined.
+
+You'll see these resources be outputted and fingerprinted at the root of `dist/`.
+
+### Service Worker
+
+There is experimental service worker support for production builds available in the CLI.
+To enable it, run the following commands:
+```
+npm install @angular/service-worker --save
+ng set apps.0.serviceWorker=true
+```
+
+On `--prod` builds a service worker manifest will be created and loaded automatically.
+Remember to disable the service worker while developing to avoid stale code.
+
+Note: service worker support is experimental and subject to change.
 
 ## Options
 <details>
@@ -102,16 +149,6 @@ or `ng serve --prod` will also make use of uglifying and tree-shaking functional
   </p>
   <p>
     URL where files will be deployed.
-  </p>
-</details>
-
-<details>
-  <summary>output-path</summary>
-  <p>
-    <code>--output-path</code> (aliases: <code>-op</code>)
-  </p>
-  <p>
-    Path where output will be placed
   </p>
 </details>
 
@@ -166,6 +203,19 @@ or `ng serve --prod` will also make use of uglifying and tree-shaking functional
 </details>
 
 <details>
+  <summary>missing-translation</summary>
+  <p>
+    <code>--missing-translation</code>
+  </p>
+  <p>
+    How to handle missing translations for i18n.
+  </p>
+  <p>
+    Values: <code>error</code>, <code>warning</code>, <code>ignore</code>
+  </p>
+</details>
+
+<details>
   <summary>output-hashing</summary>
   <p>
     <code>--output-hashing</code> (aliases: <code>-oh</code>)
@@ -185,6 +235,16 @@ or `ng serve --prod` will also make use of uglifying and tree-shaking functional
   </p>
   <p>
     Path where output will be placed.
+  </p>
+</details>
+
+<details>
+  <summary>delete-output-path</summary>
+  <p>
+    <code>--delete-output-path</code> (aliases: <code>-dop</code>) <em>default value: true</<em>
+  </p>
+  <p>
+    Delete the output-path directory.
   </p>
 </details>
 
@@ -249,6 +309,16 @@ or `ng serve --prod` will also make use of uglifying and tree-shaking functional
 </details>
 
 <details>
+  <summary>common-chunk</summary>
+  <p>
+    <code>--common-chunk</code> (aliases: <code>-cc</code>) <em>default value: true</em>
+  </p>
+  <p>
+    Use a separate bundle containing code used across multiple bundles.
+  </p>
+</details>
+
+<details>
   <summary>verbose</summary>
   <p>
     <code>--verbose</code> (aliases: <code>-v</code>) <em>default value: false</em>
@@ -265,5 +335,45 @@ or `ng serve --prod` will also make use of uglifying and tree-shaking functional
   </p>
   <p>
     Run build when files change.
+  </p>
+</details>
+
+<details>
+  <summary>show-circular-dependencies</summary>
+  <p>
+    <code>--show-circular-dependencies</code> (aliases: <code>-scd</code>)
+  </p>
+  <p>
+    Show circular dependency warnings on builds.
+  </p>
+</details>
+
+<details>
+  <summary>build-optimizer</summary>
+  <p>
+    <code>--build-optimizer</code>
+  </p>
+  <p>
+    Enables @angular-devkit/build-optimizer optimizations when using `--aot`.
+  </p>
+</details>
+
+<details>
+  <summary>named-chunks</summary>
+  <p>
+    <code>--named-chunks</code> (aliases: <code>-nc</code>)
+  </p>
+  <p>
+    Use file name for lazy loaded chunks.
+  </p>
+</details>
+
+<details>
+  <summary>bundle-dependencies</summary>
+  <p>
+    <code>--bundle-dependencies</code>
+  </p>
+  <p>
+    In a server build, state whether `all` or `none` dependencies should be bundles in the output.
   </p>
 </details>

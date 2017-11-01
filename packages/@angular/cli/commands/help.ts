@@ -5,18 +5,20 @@ const Command = require('../ember-cli/lib/models/command');
 const stringUtils = require('ember-cli-string-utils');
 const lookupCommand = require('../ember-cli/lib/cli/lookup-command');
 
-const commandsToIgnore = [
-  'easter-egg',
-  'init',
-  'destroy'
-];
-
 const HelpCommand = Command.extend({
   name: 'help',
   description: 'Shows help for the CLI.',
   works: 'everywhere',
 
-  availableOptions: [],
+  availableOptions: [
+    {
+      name: 'short',
+      type: Boolean,
+      default: false,
+      aliases: ['s'],
+      description: 'Display command name and description only.'
+    },
+  ],
 
   anonymousOptions: ['command-name (Default: all)'],
 
@@ -26,10 +28,6 @@ const HelpCommand = Command.extend({
       .filter(file => file.match(/\.(j|t)s$/) && !file.match(/\.d.ts$/))
       .map(file => path.parse(file).name)
       .map(file => file.toLowerCase());
-
-    commandFiles = commandFiles.filter(file => {
-      return commandsToIgnore.indexOf(file) < 0;
-    });
 
     let commandMap = commandFiles.reduce((acc: any, curr: string) => {
       let classifiedName = stringUtils.classify(curr);
@@ -45,14 +43,18 @@ const HelpCommand = Command.extend({
     }
 
     commandFiles.forEach(cmd => {
-      let Command = lookupCommand(commandMap, cmd);
+      const Command = lookupCommand(commandMap, cmd);
 
-      let command = new Command({
+      const command = new Command({
         ui: this.ui,
         project: this.project,
         commands: this.commands,
         tasks: this.tasks
       });
+
+      if (command.hidden || command.unknown) {
+        return;
+      }
 
       if (rawArgs.length > 0) {
         let commandInput = rawArgs[0];
@@ -62,14 +64,25 @@ const HelpCommand = Command.extend({
         }
 
         if (cmd === commandInput) {
-          if (command.printDetailedHelp(commandOptions)) {
-            this.ui.writeLine(command.printDetailedHelp(commandOptions));
+          if (commandOptions.short) {
+            this.ui.writeLine(command.printShortHelp(commandOptions));
+          } else if (command.printDetailedHelp(commandOptions, rawArgs)) {
+            const result = command.printDetailedHelp(commandOptions, rawArgs);
+            if (result instanceof Promise) {
+              result.then(r => this.ui.writeLine(r));
+            } else {
+              this.ui.writeLine(result);
+            }
           } else {
             this.ui.writeLine(command.printBasicHelp(commandOptions));
           }
         }
       } else {
-        this.ui.writeLine(command.printBasicHelp(commandOptions));
+        if (commandOptions.short) {
+          this.ui.writeLine(command.printShortHelp(commandOptions));
+        } else {
+          this.ui.writeLine(command.printBasicHelp(commandOptions));
+        }
       }
 
     });
