@@ -8,11 +8,13 @@ import {getGlobalVariable} from '../../utils/env';
 
 
 const doneRe =
-  /webpack: bundle is now VALID|webpack: Compiled successfully.|webpack: Failed to compile./;
+  /: Compiled successfully.|: Failed to compile./;
 const errorRe = /ERROR in/;
 
 
 export default function() {
+  // TODO(architect): Delete this test. It is now in devkit/build-angular.
+
   if (process.platform.startsWith('win')) {
     return Promise.resolve();
   }

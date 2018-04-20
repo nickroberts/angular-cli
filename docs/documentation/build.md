@@ -83,12 +83,19 @@ Flag                | `--dev` | `--prod`
 `--named-chunks`    | `true`  | `false`
 `--build-optimizer` | `false` | `true` with AOT and Angular 5
 
-`--extract-licenses` Extract all licenses in a separate file, in the case of production builds only.
-`--i18n-file` Localization file to use for i18n.
 `--prod` also sets the following non-flaggable settings:
 - Adds service worker if configured in `.angular-cli.json`.
 - Replaces `process.env.NODE_ENV` in modules with the `production` value (this is needed for some libraries, like react).
 - Runs UglifyJS on the code.
+
+### `--build-optimizer` and `--vendor-chunk`
+
+When using Build Optimizer the vendor chunk will be disabled by default.
+You can override this with `--vendor-chunk=true`.
+
+Total bundle sizes with Build Optimizer are smaller if there is no separate vendor chunk because
+having vendor code in the same chunk as app code makes it possible for Uglify to remove more unused
+code.
 
 ### CSS resources
 
@@ -110,6 +117,16 @@ On `--prod` builds a service worker manifest will be created and loaded automati
 Remember to disable the service worker while developing to avoid stale code.
 
 Note: service worker support is experimental and subject to change.
+
+### ES2015 support
+
+To build in ES2015 mode, edit `./tsconfig.json` to use `"target": "es2015"` (instead of `es5`).
+
+This will cause application TypeScript and Uglify be output as ES2015, and third party libraries
+to be loaded through the `es2015` entry in `package.json` if available.
+
+Be aware that JIT does not support ES2015 and so you should build/serve your app with `--aot`.
+See https://github.com/angular/angular-cli/issues/7797 for details.
 
 ## Options
 <details>
@@ -261,7 +278,7 @@ Note: service worker support is experimental and subject to change.
 <details>
   <summary>progress</summary>
   <p>
-    <code>--progress</code> (aliases: <code>-pr</code>) <em>default value: true</<em>
+    <code>--progress</code> (aliases: <code>-pr</code>) <em>default value: true inside TTY, false otherwise</<em>
   </p>
   <p>
     Log progress to the console while building.
@@ -375,5 +392,16 @@ Note: service worker support is experimental and subject to change.
   </p>
   <p>
     In a server build, state whether `all` or `none` dependencies should be bundles in the output.
+  </p>
+</details>
+
+
+<details>
+  <summary>extract-licenses</summary>
+  <p>
+    <code>--extract-licenses</code> <em>default value: true</<em>
+  </p>
+  <p>
+    Extract all licenses in a separate file, in the case of production builds only.
   </p>
 </details>

@@ -5,10 +5,7 @@ import {getGlobalVariable} from '../../utils/env';
 
 
 export default function() {
-  // Skip this in Appveyor tests.
-  if (getGlobalVariable('argv').appveyor) {
-    return Promise.resolve();
-  }
+  // TODO(architect): Delete this test. It is now in devkit/build-angular.
 
   // Skip this in ejected tests.
   if (getGlobalVariable('argv').eject) {
@@ -16,6 +13,6 @@ export default function() {
   }
 
   return ng('build', '--stats-json')
-    .then(() => expectFileToExist('./dist/stats.json'))
+    .then(() => expectFileToExist('./dist/test-project/stats.json'))
     .then(() => expectGitToBeClean());
 }

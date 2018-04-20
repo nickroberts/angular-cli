@@ -1,55 +1,113 @@
-// Prevent the dependency validation from tripping because we don't import these. We need
-// it as a peer dependency of @angular/core.
-// require('zone.js')
-
 import * as path from 'path';
+import { filter } from 'rxjs/operators';
+import { logging, terminal } from '@angular-devkit/core';
+import { runCommand } from '../../models/command-runner';
 
-const cli = require('../../ember-cli/lib/cli');
-const UI = require('../../ember-cli/lib/ui');
+const Project = require('../../ember-cli/lib/models/project');
 
 
 function loadCommands() {
   return {
-    'build': require('../../commands/build').default,
-    'serve': require('../../commands/serve').default,
-    'eject': require('../../commands/eject').default,
+    // Schematics commands.
+    'add': require('../../commands/add').default,
     'new': require('../../commands/new').default,
     'generate': require('../../commands/generate').default,
-    'destroy': require('../../commands/destroy').default,
+    'update': require('../../commands/update').default,
+
+    // Architect commands.
+    'build': require('../../commands/build').default,
+    'serve': require('../../commands/serve').default,
     'test': require('../../commands/test').default,
     'e2e': require('../../commands/e2e').default,
-    'help': require('../../commands/help').default,
     'lint': require('../../commands/lint').default,
-    'version': require('../../commands/version').default,
-    'completion': require('../../commands/completion').default,
-    'doc': require('../../commands/doc').default,
     'xi18n': require('../../commands/xi18n').default,
+    'run': require('../../commands/run').default,
+
+    // Disabled commands.
+    'eject': require('../../commands/eject').default,
 
     // Easter eggs.
     'make-this-awesome': require('../../commands/easter-egg').default,
 
-    // Configuration.
-    'set': require('../../commands/set').default,
-    'get': require('../../commands/get').default
+    // Other.
+    'config': require('../../commands/config').default,
+    'help': require('../../commands/help').default,
+    'version': require('../../commands/version').default,
+    'doc': require('../../commands/doc').default,
   };
 }
 
-export default function(options: any) {
-
-  // patch UI to not print Ember-CLI warnings (which don't apply to Angular CLI)
-  UI.prototype.writeWarnLine = function () { };
-
-  options.cli = {
-    name: 'ng',
-    root: path.join(__dirname, '..', '..'),
-    npmPackage: '@angular/cli'
-  };
-
-  options.commands = loadCommands();
-
+export default async function(options: any) {
   // ensure the environemnt variable for dynamic paths
   process.env.PWD = path.normalize(process.env.PWD || process.cwd());
   process.env.CLI_ROOT = process.env.CLI_ROOT || path.resolve(__dirname, '..', '..');
 
-  return cli(options);
+  const commands = loadCommands();
+
+  const logger = new logging.IndentLogger('cling');
+  let loggingSubscription;
+  if (!options.testing) {
+    loggingSubscription = initializeLogging(logger);
+  }
+  const context = {
+    project: Project.projectOrnullProject(undefined, undefined),
+  };
+
+  try {
+    const maybeExitCode = await runCommand(commands, options.cliArgs, logger, context);
+    if (typeof maybeExitCode === 'number') {
+      console.assert(Number.isInteger(maybeExitCode));
+
+      return maybeExitCode;
+    }
+
+    return 0;
+  } catch (err) {
+    if (err instanceof Error) {
+      logger.fatal(err.message);
+      logger.fatal(err.stack);
+    } else if (typeof err === 'string') {
+      logger.fatal(err);
+    } else if (typeof err === 'number') {
+      // Log nothing.
+    } else {
+      logger.fatal('An unexpected error occured: ' + JSON.stringify(err));
+    }
+
+    if (options.testing) {
+      debugger;
+      throw err;
+    }
+
+    loggingSubscription.unsubscribe();
+    return 1;
+  }
+}
+
+// Initialize logging.
+function initializeLogging(logger: logging.Logger) {
+  return logger
+    .pipe(filter(entry => (entry.level != 'debug')))
+    .subscribe(entry => {
+      let color = (x: string) => terminal.dim(terminal.white(x));
+      let output = process.stdout;
+      switch (entry.level) {
+        case 'info':
+          color = terminal.white;
+          break;
+        case 'warn':
+          color = terminal.yellow;
+          break;
+        case 'error':
+          color = terminal.red;
+          output = process.stderr;
+          break;
+        case 'fatal':
+          color = (x) => terminal.bold(terminal.red(x));
+          output = process.stderr;
+          break;
+      }
+
+      output.write(color(entry.message) + '\n');
+    });
 }

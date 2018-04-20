@@ -2,7 +2,6 @@ import * as fs from 'fs';
 
 import {ng} from '../../utils/process';
 import {writeFile, prependToFile, replaceInFile} from '../../utils/fs';
-import {getGlobalVariable} from '../../utils/env';
 
 const OUTPUT_RE = /(main|polyfills|vendor|inline|styles|\d+)\.[a-z0-9]+\.(chunk|bundle)\.(js|css)$/;
 
@@ -43,11 +42,8 @@ function validateHashes(
 }
 
 export default function() {
-  // Skip this in Appveyor tests.
-  if (getGlobalVariable('argv').appveyor) {
-    return Promise.resolve();
-  }
-
+  // TODO(architect): Delete this test. It is now in devkit/build-angular.
+  return;
 
   let oldHashes: Map<string, string>;
   let newHashes: Map<string, string>;
@@ -80,7 +76,7 @@ export default function() {
       newHashes = generateFileHashMap();
     })
     .then(() => {
-      validateHashes(oldHashes, newHashes, ['inline', 'styles']);
+      validateHashes(oldHashes, newHashes, ['styles']);
       oldHashes = newHashes;
     })
     .then(() => writeFile('src/app/app.component.css', 'h1 { margin: 10px; }'))
@@ -89,7 +85,7 @@ export default function() {
       newHashes = generateFileHashMap();
     })
     .then(() => {
-      validateHashes(oldHashes, newHashes, ['inline', 'main']);
+      validateHashes(oldHashes, newHashes, ['main']);
       oldHashes = newHashes;
     })
     .then(() => prependToFile('src/app/lazy/lazy.module.ts', `

@@ -1,242 +1,112 @@
+import { CommandScope, Option } from '../models/command';
 import chalk from 'chalk';
-const stringUtils = require('ember-cli-string-utils');
-import { oneLine } from 'common-tags';
-import { CliConfig } from '../models/config';
-
-import 'rxjs/add/observable/of';
-import 'rxjs/add/operator/ignoreElements';
+import { getDefaultSchematicCollection } from '../utilities/config';
 import {
   getCollection,
   getEngineHost
 } from '../utilities/schematics';
-import { DynamicPathOptions, dynamicPathParser } from '../utilities/dynamic-path-parser';
-import { getAppFromConfig } from '../utilities/app-utils';
-import * as path from 'path';
-import { SchematicAvailableOptions } from '../tasks/schematic-get-options';
+import { tags } from '@angular-devkit/core';
+import { SchematicCommand } from '../models/schematic-command';
 
-const Command = require('../ember-cli/lib/models/command');
-const SilentError = require('silent-error');
+const { cyan } = chalk;
 
-const { cyan, grey, yellow } = chalk;
-const separatorRegEx = /[\/\\]/g;
+export default class GenerateCommand extends SchematicCommand {
+  public readonly name = 'generate';
+  public readonly description = 'Generates and/or modifies files based on a schematic.';
+  public static aliases = ['g'];
+  public readonly scope = CommandScope.inProject;
+  public arguments = ['schematic'];
+  public options: Option[] = [
+    ...this.coreOptions
+  ];
 
-
-export default Command.extend({
-  name: 'generate',
-  description: 'Generates and/or modifies files based on a schematic.',
-  aliases: ['g'],
-
-  availableOptions: [
-    {
-      name: 'dry-run',
-      type: Boolean,
-      default: false,
-      aliases: ['d'],
-      description: 'Run through without making any changes.'
-    },
-    {
-      name: 'force',
-      type: Boolean,
-      default: false,
-      aliases: ['f'],
-      description: 'Forces overwriting of files.'
-    },
-    {
-      name: 'app',
-      type: String,
-      aliases: ['a'],
-      description: 'Specifies app name to use.'
-    },
-    {
-      name: 'collection',
-      type: String,
-      aliases: ['c'],
-      description: 'Schematics collection to use.'
-    },
-    {
-      name: 'lint-fix',
-      type: Boolean,
-      aliases: ['lf'],
-      description: 'Use lint to fix files after generation.'
-    }
-  ],
-
-  anonymousOptions: [
-    '<schematic>'
-  ],
-
-  getCollectionName(rawArgs: string[]) {
-    let collectionName = CliConfig.getValue('defaults.schematics.collection');
-    if (rawArgs) {
-      const parsedArgs = this.parseArgs(rawArgs, false);
-      if (parsedArgs.options.collection) {
-        collectionName = parsedArgs.options.collection;
-      }
-    }
-    return collectionName;
-  },
-
-  beforeRun: function(rawArgs: string[]) {
-
-    const isHelp = ['--help', '-h'].includes(rawArgs[0]);
-    if (isHelp) {
+  private initialized = false;
+  public async initialize(options: any) {
+    if (this.initialized) {
       return;
     }
+    super.initialize(options);
+    this.initialized = true;
 
-    const schematicName = rawArgs[0];
-    if (!schematicName) {
-      return Promise.reject(new SilentError(oneLine`
-          The "ng generate" command requires a
-          schematic name to be specified.
-          For more details, use "ng help".
-      `));
-    }
+    const [collectionName, schematicName] = this.parseSchematicInfo(options);
 
-    if (/^\d/.test(rawArgs[1])) {
-      SilentError.debugOrThrow('@angular/cli/commands/generate',
-        `The \`ng generate ${schematicName} ${rawArgs[1]}\` file name cannot begin with a digit.`);
-    }
-
-    const SchematicGetOptionsTask = require('../tasks/schematic-get-options').default;
-
-    const getOptionsTask = new SchematicGetOptionsTask({
-      ui: this.ui,
-      project: this.project
-    });
-    const collectionName = this.getCollectionName(rawArgs);
-
-    return getOptionsTask.run({
+    if (!!schematicName) {
+      const schematicOptions = await this.getOptions({
         schematicName,
-        collectionName
-      })
-      .then((availableOptions: SchematicAvailableOptions) => {
-        let anonymousOptions: string[] = [];
-        if (collectionName === '@schematics/angular' && schematicName === 'interface') {
-          anonymousOptions = ['<type>'];
-        }
-
-        this.registerOptions({
-          anonymousOptions: anonymousOptions,
-          availableOptions: availableOptions
-        });
-      });
-  },
-
-  run: function (commandOptions: any, rawArgs: string[]) {
-    if (rawArgs[0] === 'module' && !rawArgs[1]) {
-      throw 'The `ng generate module` command requires a name to be specified.';
-    }
-
-    const entityName = rawArgs[1];
-    commandOptions.name = stringUtils.dasherize(entityName.split(separatorRegEx).pop());
-
-    const appConfig = getAppFromConfig(commandOptions.app);
-    const dynamicPathOptions: DynamicPathOptions = {
-      project: this.project,
-      entityName: entityName,
-      appConfig: appConfig,
-      dryRun: commandOptions.dryRun
-    };
-    const parsedPath = dynamicPathParser(dynamicPathOptions);
-    commandOptions.sourceDir = appConfig.root;
-    const root = appConfig.root + path.sep;
-    commandOptions.appRoot = parsedPath.appRoot === appConfig.root ? '' :
-      parsedPath.appRoot.startsWith(root)
-        ? parsedPath.appRoot.substr(root.length)
-        : parsedPath.appRoot;
-
-    commandOptions.path = parsedPath.dir.replace(separatorRegEx, '/');
-    commandOptions.path = parsedPath.dir === appConfig.root ? '' :
-      parsedPath.dir.startsWith(root)
-        ? commandOptions.path.substr(root.length)
-        : commandOptions.path;
-
-    const cwd = this.project.root;
-    const schematicName = rawArgs[0];
-
-    if (['component', 'c', 'directive', 'd'].indexOf(schematicName) !== -1) {
-      if (commandOptions.prefix === undefined) {
-        commandOptions.prefix = appConfig.prefix;
-      }
-
-      if (schematicName === 'component' || schematicName === 'c') {
-        if (commandOptions.styleext === undefined) {
-          commandOptions.styleext = CliConfig.getValue('defaults.styleExt');
-        }
-      }
-    }
-
-    const SchematicRunTask = require('../tasks/schematic-run').default;
-    const schematicRunTask = new SchematicRunTask({
-      ui: this.ui,
-      project: this.project
-    });
-    const collectionName = commandOptions.collection ||
-      CliConfig.getValue('defaults.schematics.collection');
-
-    if (collectionName === '@schematics/angular' && schematicName === 'interface' && rawArgs[2]) {
-      commandOptions.type = rawArgs[2];
-    }
-
-    return schematicRunTask.run({
-        taskOptions: commandOptions,
-        workingDir: cwd,
         collectionName,
-        schematicName
       });
-  },
-
-  printDetailedHelp: function (_options: any, rawArgs: any): string | Promise<string> {
-    const engineHost = getEngineHost();
-    const collectionName = this.getCollectionName();
-    const collection = getCollection(collectionName);
-    const schematicName = rawArgs[1];
-    if (schematicName) {
-      const SchematicGetOptionsTask = require('../tasks/schematic-get-options').default;
-      const getOptionsTask = new SchematicGetOptionsTask({
-        ui: this.ui,
-        project: this.project
-      });
-      return getOptionsTask.run({
-        schematicName,
-        collectionName
-      })
-      .then((availableOptions: SchematicAvailableOptions[]) => {
-        const output: string[] = [];
-        output.push(cyan(`ng generate ${schematicName} ${cyan('[name]')} ${cyan('<options...>')}`));
-        availableOptions
-          .filter(opt => opt.name !== 'name')
-          .forEach(opt => {
-            let text = cyan(`    --${opt.name}`);
-            if (opt.schematicType) {
-              text += cyan(` (${opt.schematicType})`);
-            }
-            if (opt.schematicDefault) {
-              text += cyan(` (Default: ${opt.schematicDefault})`);
-            }
-            if (opt.description) {
-              text += ` ${opt.description}`;
-            }
-            output.push(text);
-            if (opt.aliases && opt.aliases.length > 0) {
-              const aliasText = opt.aliases.reduce(
-                (acc, curr) => {
-                  return acc + ` -${curr}`;
-                },
-                '');
-              output.push(grey(`      aliases: ${aliasText}`));
-            }
-          });
-        return output.join('\n');
-      });
-    } else {
-      const schematicNames: string[] = engineHost.listSchematics(collection);
-      const output: string[] = [];
-      output.push(cyan('Available schematics:'));
-      schematicNames.forEach(schematicName => {
-        output.push(yellow(`    ${schematicName}`));
-      });
-      return Promise.resolve(output.join('\n'));
+      this.options = this.options.concat(schematicOptions.options);
+      this.arguments = this.arguments.concat(schematicOptions.arguments.map(a => a.name));
     }
   }
-});
+
+  validate(options: any): boolean | Promise<boolean> {
+    if (!options._[0]) {
+      this.logger.error(tags.oneLine`
+        The "ng generate" command requires a
+        schematic name to be specified.
+        For more details, use "ng help".`);
+
+      return false;
+    }
+
+    return true;
+  }
+
+  public run(options: any) {
+    const [collectionName, schematicName] = this.parseSchematicInfo(options);
+
+    // remove the schematic name from the options
+    options._ = options._.slice(1);
+
+    return this.runSchematic({
+      collectionName,
+      schematicName,
+      schematicOptions: options,
+      debug: options.debug,
+      dryRun: options.dryRun,
+      force: options.force,
+    });
+  }
+
+  private parseSchematicInfo(options: any) {
+    let collectionName = getDefaultSchematicCollection();
+
+    let schematicName: string = options._[0];
+
+    if (schematicName) {
+      if (schematicName.includes(':')) {
+        [collectionName, schematicName] = schematicName.split(':', 2);
+      }
+    }
+
+    return [collectionName, schematicName];
+  }
+
+  public printHelp(options: any) {
+    const schematicName = options._[0];
+    if (schematicName) {
+      const argDisplay = this.arguments && this.arguments.length > 0
+        ? ' ' + this.arguments.filter(a => a !== 'schematic').map(a => `<${a}>`).join(' ')
+        : '';
+      const optionsDisplay = this.options && this.options.length > 0
+        ? ' [options]'
+        : '';
+      this.logger.info(`usage: ng generate ${schematicName}${argDisplay}${optionsDisplay}`);
+      this.printHelpOptions(options);
+    } else {
+      this.printHelpUsage(this.name, this.arguments, this.options);
+      const engineHost = getEngineHost();
+      const [collectionName] = this.parseSchematicInfo(options);
+      const collection = getCollection(collectionName);
+      const schematicNames: string[] = engineHost.listSchematics(collection);
+      this.logger.info('Available schematics:');
+      schematicNames.forEach(schematicName => {
+        this.logger.info(`    ${schematicName}`);
+      });
+
+      this.logger.warn(`\nTo see help for a schematic run:`);
+      this.logger.info(cyan(`  ng generate <schematic> --help`));
+    }
+  }
+}

@@ -3,14 +3,10 @@ import { killAllProcesses } from '../../utils/process';
 import { ngServe } from '../../utils/project';
 import { updateJsonFile } from '../../utils/project';
 import { moveFile } from '../../utils/fs';
-import { getGlobalVariable } from '../../utils/env';
 
 
 export default function () {
-  // Skip this in Appveyor tests.
-  if (getGlobalVariable('argv').appveyor) {
-    return Promise.resolve();
-  }
+  // TODO(architect): Delete this test. It is now in devkit/build-angular.
 
   // should fallback to config.app[0].index (index.html by default)
   return Promise.resolve()
@@ -24,9 +20,9 @@ export default function () {
     .then(() => killAllProcesses(), (err) => { killAllProcesses(); throw err; })
     // should correctly fallback to a changed index
     .then(() => moveFile('src/index.html', 'src/not-index.html'))
-    .then(() => updateJsonFile('.angular-cli.json', configJson => {
-      const app = configJson['apps'][0];
-      app['index'] = 'not-index.html';
+    .then(() => updateJsonFile('angular.json', workspaceJson => {
+      const appArchitect = workspaceJson.projects['test-project'].architect;
+      appArchitect.build.options.index = 'src/not-index.html';
     }))
     .then(() => ngServe())
     .then(() => request('http://localhost:4200/'))

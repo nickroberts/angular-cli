@@ -5,8 +5,9 @@ require('../lib/bootstrap-local');
 const validateCommitMessage = require('./validate-commit-message');
 const execSync = require('child_process').execSync;
 const chalk = require('chalk');
-const Logger = require('@ngtools/logger').Logger;
-require('rxjs/add/operator/filter');
+const { logging } = require('@angular-devkit/core');
+const Logger = logging.Logger;
+const filter = require('rxjs/operators').filter;
 
 // Configure logger
 const logger = new Logger('test-commit-messages');
@@ -25,7 +26,7 @@ logger.subscribe((entry) => {
 });
 
 logger
-  .filter((entry) => entry.level === 'fatal')
+  .pipe(filter((entry) => entry.level === 'fatal'))
   .subscribe(() => {
     process.stderr.write('A fatal error happened. See details above.');
     process.exit(1);

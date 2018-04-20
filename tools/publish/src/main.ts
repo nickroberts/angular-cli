@@ -1,11 +1,8 @@
-import 'reflect-metadata';
-
-import {IndentLogger, LogEntry} from '@ngtools/logger';
+import { logging } from '@angular-devkit/core';
 import chalk from 'chalk';
 import * as minimist from 'minimist';
 
-
-import 'rxjs/add/operator/filter';
+import {filter} from 'rxjs/operators';
 
 
 const { bold, red, yellow, white } = chalk;
@@ -14,11 +11,11 @@ const argv = minimist(process.argv.slice(2), {
   boolean: ['verbose']
 });
 
-const rootLogger = new IndentLogger('cling');
+const rootLogger = new logging.IndentLogger('cling');
 
 rootLogger
-  .filter((entry: LogEntry) => (entry.level != 'debug' || argv['verbose']))
-  .subscribe((entry: LogEntry) => {
+  .pipe(filter(entry => (entry.level != 'debug' || argv['verbose'])))
+  .subscribe(entry => {
     let color: (s: string) => string = white;
     let output = process.stdout;
     switch (entry.level) {
@@ -32,7 +29,7 @@ rootLogger
   });
 
 rootLogger
-  .filter((entry: LogEntry) => entry.level == 'fatal')
+  .pipe(filter(entry => entry.level == 'fatal'))
   .subscribe(() => {
     process.stderr.write('A fatal error happened. See details above.');
     process.exit(100);

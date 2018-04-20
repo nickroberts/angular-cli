@@ -2,14 +2,11 @@ import { writeMultipleFiles } from '../../utils/fs';
 import { ng } from '../../utils/process';
 import { updateJsonFile } from '../../utils/project';
 import { expectToFail } from '../../utils/utils';
-import { getGlobalVariable } from '../../utils/env';
 import { stripIndent } from 'common-tags';
 
+
 export default function () {
-  // Skip this in Appveyor tests.
-  if (getGlobalVariable('argv').appveyor) {
-    return Promise.resolve();
-  }
+  // TODO(architect): Delete this test. It is now in devkit/build-angular.
 
   return Promise.resolve()
     .then(() => ng('test', '--watch=false'))
@@ -64,15 +61,15 @@ export default function () {
       `
     }))
     // should fail because the global scripts were not added to scripts array
-    .then(() => expectToFail(() => ng('test', '--single-run')))
-    .then(() => updateJsonFile('.angular-cli.json', configJson => {
-      const app = configJson['apps'][0];
-      app['scripts'] = [
-        'string-script.js',
-        { input: 'input-script.js' }
+    .then(() => expectToFail(() => ng('test', '--watch=false')))
+    .then(() => updateJsonFile('angular.json', workspaceJson => {
+      const appArchitect = workspaceJson.projects['test-project'].architect;
+      appArchitect.test.options.scripts = [
+        { input: 'src/string-script.js' },
+        { input: 'src/input-script.js' }
       ];
     }))
     // should pass now
-    .then(() => ng('test', '--single-run'));
+    .then(() => ng('test', '--watch=false'));
 }
 
